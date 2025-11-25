@@ -1,4 +1,4 @@
-package main
+package repl
 
 import (
 	"bufio"
@@ -8,8 +8,8 @@ import (
 	"runtime/pprof"
 	"strings"
 
-	"github.com/zhemao/glisp/extensions"
-	"github.com/zhemao/glisp/interpreter"
+	"github.com/chrhlnd/glisp/extensions"
+	"github.com/chrhlnd/glisp/interpreter"
 )
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")

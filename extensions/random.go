@@ -1,7 +1,7 @@
 package glispext
 
 import (
-	"github.com/zhemao/glisp/interpreter"
+	"github.com/chrhlnd/glisp/interpreter"
 	"math/rand"
 	"time"
 )
