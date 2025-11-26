@@ -1,7 +1,7 @@
 package glispext
 
 import (
-	"github.com/chrhlnd/glisp/interpreter"
+	"github.com/chrhlnd/glisp"
 	"math/rand"
 	"time"
 )

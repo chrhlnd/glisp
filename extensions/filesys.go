@@ -2,7 +2,7 @@ package glispext
 
 import (
 	"fmt"
-	"github.com/chrhlnd/glisp/interpreter"
+	"github.com/chrhlnd/glisp"
 	"os"
 	"errors"
 	"path/filepath"

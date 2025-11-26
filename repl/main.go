@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/chrhlnd/glisp/extensions"
-	"github.com/chrhlnd/glisp/interpreter"
 )
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")

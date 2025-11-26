@@ -3,7 +3,7 @@ package glispext
 import (
 	"errors"
 	"fmt"
-	"github.com/chrhlnd/glisp/interpreter"
+	"github.com/chrhlnd/glisp"
 )
 
 type SexpChannel chan glisp.Sexp
