@@ -197,6 +197,14 @@ func (hash *SexpHash) HashDelete(key Sexp) error {
 	return nil
 }
 
+func (hash *SexpHash) Clear() error {
+	for key := range hash.Map {
+		delete(hash.Map, key)
+	}
+	(*hash.NumKeys) = 0
+	return nil
+}
+
 func HashCountKeys(hash SexpHash) int {
 	var num int
 	for _, arr := range hash.Map {

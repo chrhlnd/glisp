@@ -243,6 +243,26 @@ func SgetFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	return SexpChar(str[i]), nil
 }
 
+func HashClear(env *Glisp, name string, args []Sexp) (Sexp, error) {
+	if len(args) < 1 {
+		return SexpNull, WrongNargs
+	}
+
+	for _, arg := range args {
+		var hash SexpHash
+		switch e := arg.(type) {
+		case SexpHash:
+			hash = e
+		default:
+			return SexpNull, errors.New("arguments to hash clear need to be hashes")
+		}
+
+		hash.Clear()
+	}
+
+	return SexpNull, nil
+}
+
 func HashAccessFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	if len(args) < 2 || len(args) > 3 {
 		return SexpNull, WrongNargs
@@ -897,6 +917,7 @@ var BuiltinFunctions = map[string]GlispUserFunction{
 	"hget":       HashAccessFunction,
 	"hset!":      HashAccessFunction,
 	"hdel!":      HashAccessFunction,
+	"hclear!":    HashClear,
 	"slice":      SliceFunction,
 	"len":        LenFunction,
 	"append":     AppendFunction,
