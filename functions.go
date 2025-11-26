@@ -344,7 +344,7 @@ func AppendFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	switch t := args[0].(type) {
 	case SexpArray:
 		if coalesce {
-			for _, arg := range args {
+			for _, arg := range args[1:] {
 				if IsEmpty(arg) {
 					continue
 				}
@@ -355,7 +355,7 @@ func AppendFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 			return SexpArray(append(t, args[1:]...)), nil
 		}
 	case SexpStr:
-		for _, arg := range args {
+		for _, arg := range args[1:] {
 			if coalesce && IsEmpty(arg) {
 				continue
 			}
