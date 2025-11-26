@@ -1,4 +1,4 @@
-module chrhlnd/glisp
+module github.com/chrhlnd/glisp
 
 go 1.25.4
 
