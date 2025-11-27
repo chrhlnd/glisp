@@ -37,7 +37,9 @@ func execFunction(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp,
 	info, _ := glisp.MakeHash(nil, "ExecResult")
 
 	for _, line := range args[1:] {
-		cmd.Env = append(cmd.Env, string(line.SexpString()))
+		if sline, ok := line.(glisp.SexpStr); ok {
+			cmd.Env = append(cmd.Env, string(sline))
+		}
 	}
 
 	envArr := make([]glisp.Sexp, len(cmd.Env))
