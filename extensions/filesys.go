@@ -516,6 +516,7 @@ func fileInfo(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, err
 			ginfo.HashSet(glisp.SexpStr("size"), glisp.SexpInt(0))
 			ginfo.HashSet(glisp.SexpStr("mode"), glisp.SexpInt(0))
 			ginfo.HashSet(glisp.SexpStr("isdir"), glisp.SexpBool(false))
+			ginfo.HashSet(glisp.SexpStr("mtime"), glisp.SexpInt(0))
 			return ginfo, nil
 		}
 
@@ -529,6 +530,7 @@ func fileInfo(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, err
 		ginfo.HashSet(glisp.SexpStr("size"), glisp.SexpInt(info.Size()))
 		ginfo.HashSet(glisp.SexpStr("mode"), glisp.SexpInt(info.Mode()))
 		ginfo.HashSet(glisp.SexpStr("isdir"), glisp.SexpBool(info.IsDir()))
+		ginfo.HashSet(glisp.SexpStr("mtime"), glisp.SexpInt(info.ModTime().UnixMilli()))
 
 		return ginfo, nil
 	}
