@@ -29,3 +29,31 @@ func AppendStr(str SexpStr, expr Sexp) (SexpStr, error) {
 
 	return str + SexpStr(chr), nil
 }
+
+
+func FoldrString(env *Glisp, fun SexpFunction, arr SexpStr, acc Sexp) (Sexp, error) {
+	var err error
+
+	for i := len(arr) - 1; i > -1; i-- {
+		acc, err = env.Apply(fun, []Sexp{SexpChar(arr[i]), acc})
+		if err != nil {
+			return acc, err
+		}
+	}
+
+	return acc, nil
+}
+
+func FoldlString(env *Glisp, fun SexpFunction, arr SexpStr, acc Sexp) (Sexp, error) {
+	var err error
+
+	for i := range string(arr) {
+		acc, err = env.Apply(fun, []Sexp{SexpChar(arr[i]), acc})
+		if err != nil {
+			return acc, err
+		}
+	}
+
+	return acc, nil
+}
+

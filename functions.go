@@ -7,6 +7,8 @@ import (
 	"os"
 	"encoding/binary"
 	"strconv"
+	"strings"
+	"reflect"
 )
 
 var WrongNargs error = errors.New("wrong number of arguments")
@@ -201,7 +203,15 @@ func ArrayAccessFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 		return SexpNull, errors.New("Second argument of aget must be integer")
 	}
 
-	if i < 0 || i >= len(arr) {
+	alen := len(arr)
+
+	for i < 0 {
+		i += alen
+	}
+
+	i %= alen
+
+	if i < 0 || i >= alen {
 		return SexpNull, errors.New("Array index out of bounds")
 	}
 
@@ -387,9 +397,11 @@ func AppendFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 		return t, nil
 	case SexpData:
 		return MakeDataFunction(env, name, args)
+	case SexpPair, SexpSentinel:
+		return AppendList(t, args[1:]), nil
 	}
 
-	return SexpNull, errors.New("First argument of append must be array or string or data")
+	return SexpNull, fmt.Errorf("Expected first arg to be (array|string|data|list) got %T", args[0])
 }
 
 func ConcatFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
@@ -610,6 +622,44 @@ func FoldlData(env *Glisp, fun SexpFunction, data SexpData, acc Sexp, sz int) (S
 	return acc, nil
 }
 
+func FoldRFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
+	if len(args) < 3 {
+		return SexpNull, WrongNargs
+	}
+	var fun SexpFunction
+
+	switch e := args[1].(type) {
+	case SexpFunction:
+		fun = e
+	default:
+		return SexpNull, fmt.Errorf("second argument must be function had type `%T` val %v", e, e)
+	}
+
+	acc := args[2]
+
+	switch e := args[0].(type) {
+	case SexpStr:
+		return FoldrString(env, fun, e, acc)
+	case SexpArray:
+		return FoldrArray(env, fun, e, acc)
+	case SexpPair:
+		return FoldrPair(env, fun, e, acc)
+	case SexpHash:
+		return FoldrHash(env, fun, e, acc)
+	case SexpData:
+		chunkSz := 1
+		if len(args) > 3 {
+			if sz, ok := args[3].(SexpInt); ok && int(sz) > 0 {
+				chunkSz = int(sz)
+			}
+		}
+		return FoldlData(env, fun, e, acc, chunkSz)
+	}
+
+	return SexpNull, fmt.Errorf("first argument must be pair, array, list, hash, or data, had type `%T` val %v", args[1], args[1])
+}
+
+
 func FoldLFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	if len(args) < 3 {
 		return SexpNull, WrongNargs
@@ -620,12 +670,14 @@ func FoldLFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	case SexpFunction:
 		fun = e
 	default:
-		return SexpNull, fmt.Errorf("first argument must be function had type `%T` val %v", e, e)
+		return SexpNull, fmt.Errorf("second argument must be function had type `%T` val %v", e, e)
 	}
 
 	acc := args[2]
 
 	switch e := args[0].(type) {
+	case SexpStr:
+		return FoldlString(env, fun, e, acc)
 	case SexpArray:
 		return FoldlArray(env, fun, e, acc)
 	case SexpPair:
@@ -642,7 +694,7 @@ func FoldLFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 		return FoldlData(env, fun, e, acc, chunkSz)
 	}
 
-	return SexpNull, fmt.Errorf("second argument must be pair, array, list, hash, or data, had type `%T` val %v", args[1], args[1])
+	return SexpNull, fmt.Errorf("first argument must be pair, array, list, hash, or data, had type `%T` val %v", args[1], args[1])
 }
 
 func MapFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
@@ -909,6 +961,7 @@ var BuiltinFunctions = map[string]GlispUserFunction{
 	"apply":      ApplyFunction,
 	"map":        MapFunction,
 	"foldl":      FoldLFunction,
+	"foldr":      FoldRFunction,
 	"make-array": MakeArrayFunction,
 	"make-data":  MakeDataFunction,
 	"aget":       ArrayAccessFunction,
@@ -934,6 +987,42 @@ var BuiltinFunctions = map[string]GlispUserFunction{
 	"cvert-int32":  ConvertFunction,
 	"cvert-float32":  ConvertFunction,
 	"cvert-float64":  ConvertFunction,
+	"ends-with" : MatchEndFunction,
+	"begins-with" : MatchEndFunction,
+}
+
+
+// (ends-with <haystack> <needle>)
+// (begins-with <haystack> <needle>)
+func MatchEndFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
+	if len(args) != 2 {
+		return SexpNull, WrongNargs
+	}
+
+	prefix := true
+	if name == "ends-with" {
+		prefix = false
+	}
+
+	if reflect.TypeOf(args[0]) != reflect.TypeOf(args[1]) {
+		return SexpNull, fmt.Errorf("args must be the same type %T != %T", args[0], args[1])
+	}
+
+	switch t := args[0].(type) {
+	case SexpStr:
+		if prefix {
+			return SexpBool(strings.HasPrefix(string(t), string(args[1].(SexpStr)))), nil
+		} else {
+			return SexpBool(strings.HasSuffix(string(t), string(args[1].(SexpStr)))), nil
+		}
+	case SexpData:
+		if prefix {
+			return SexpBool(bytes.HasPrefix([]byte(t), []byte(args[1].(SexpData)))), nil
+		} else {
+			return SexpBool(bytes.HasSuffix([]byte(t), []byte(args[1].(SexpData)))), nil
+		}
+	}
+	return SexpNull, fmt.Errorf("Unsupported type %T", args[0])
 }
 
 func ConvertFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {

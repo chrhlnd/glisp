@@ -29,6 +29,53 @@ func MakeList(expressions []Sexp) Sexp {
 	return Cons(expressions[0], MakeList(expressions[1:]))
 }
 
+func AppendList(list Sexp, adds []Sexp) Sexp {
+	var lastPair SexpPair
+
+	cur := list
+
+	for {
+		switch pair := cur.(type) {
+		case SexpPair:
+			lastPair = pair
+			cur = pair.tail
+		default:
+			for _, add := range adds {
+				if lastPair.head == nil {
+					lastPair = Cons(add, SexpNull)
+				} else {
+					lastPair = Cons(lastPair, add)
+				}
+			}
+
+			return lastPair
+		}
+	}
+}
+
+func FoldrPair(env *Glisp, fun SexpFunction, expr Sexp, acc Sexp) (Sexp, error) {
+	var err error
+
+	var fnApplyLast func (Sexp,Sexp) (Sexp, error)
+
+	fnApplyLast = func (e Sexp, acc Sexp) (Sexp, error) {
+		switch pair := e.(type) {
+		case SexpPair:
+			acc, err = fnApplyLast(pair.tail, acc)
+			if err != nil {
+				return acc, err
+			}
+			return env.Apply(fun, []Sexp{pair.head, acc})
+		}
+		if e == SexpNull {
+			return acc, nil
+		}
+		return env.Apply(fun, []Sexp{e, acc})
+	}
+
+	return fnApplyLast(expr, acc)
+}
+
 func FoldlPair(env *Glisp, fun SexpFunction, expr Sexp, acc Sexp) (Sexp, error) {
 	var err error
 

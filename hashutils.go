@@ -25,6 +25,30 @@ func HashExpression(expr Sexp) (int, error) {
 	return 0, errors.New(fmt.Sprintf("cannot hash type %T", expr))
 }
 
+func FoldrHash(env *Glisp, fun SexpFunction, hash SexpHash, acc Sexp) (Sexp, error) {
+	var err error
+	var val Sexp
+
+	for i := len(*hash.KeyOrder) - 1; i > -1; i-- {
+		key := (*hash.KeyOrder)[i]
+
+		val, err = hash.HashGetDefault(key, SexpEnd)
+		if err != nil {
+			return acc, err
+		}
+		if val == SexpEnd {
+			return acc, fmt.Errorf("Inconsistant hash object, got SexpEnd while walking the ordered list")
+		}
+
+		acc, err = env.Apply(fun, []Sexp{SexpPair{key, val}, acc})
+		if err != nil {
+			return acc, err
+		}
+	}
+
+	return acc, nil
+}
+
 func FoldlHash(env *Glisp, fun SexpFunction, hash SexpHash, acc Sexp) (Sexp, error) {
 	var err error
 	var val Sexp

@@ -519,7 +519,6 @@ func fileInfo(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, err
 			return ginfo, nil
 		}
 
-		
 		if err != nil {
 			return glisp.SexpNull, fmt.Errorf("arg(%v); testing exists file %v; err %v", i, arg, err)
 		}
@@ -536,6 +535,128 @@ func fileInfo(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, err
 	return glisp.SexpNull, nil
 }
 
+func pathNoExtension(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
+	if len(args) != 1 {
+		return glisp.SexpNull, glisp.WrongNargs
+	}
+
+	var str string
+
+	switch t := args[0].(type) {
+	case glisp.SexpStr:
+		str = string(t)
+	default:
+		str = string(t.SexpString())
+	}
+
+	str = filepath.Base(str)
+
+	ext := filepath.Ext(str)
+
+	remain := str[0:(len(str)-len(ext))]
+
+	return glisp.SexpStr(remain), nil
+}
+
+func pathExtension(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
+	if len(args) != 1 {
+		return glisp.SexpNull, glisp.WrongNargs
+	}
+
+	var str string
+
+	switch t := args[0].(type) {
+	case glisp.SexpStr:
+		str = string(t)
+	default:
+		str = string(t.SexpString())
+	}
+
+	return glisp.SexpStr(filepath.Ext(str)), nil
+}
+
+func pathBaseName(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
+	if len(args) != 1 {
+		return glisp.SexpNull, glisp.WrongNargs
+	}
+
+	switch t := args[0].(type) {
+	case glisp.SexpStr:
+		return glisp.SexpStr(filepath.Base(string(t))), nil
+	default:
+		return glisp.SexpStr(filepath.Base(string(t.SexpString()))), nil
+	}
+}
+
+func pathDir(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
+	if len(args) != 1 {
+		return glisp.SexpNull, glisp.WrongNargs
+	}
+
+	var str string
+
+	switch t := args[0].(type) {
+	case glisp.SexpStr:
+		str = string(t)
+	default:
+		str = string(t.SexpString())
+	}
+
+	return glisp.SexpStr(filepath.Dir(str)), nil
+}
+
+func pathNoExt(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
+	if len(args) != 1 {
+		return glisp.SexpNull, glisp.WrongNargs
+	}
+
+	var str string
+
+	switch t := args[0].(type) {
+	case glisp.SexpStr:
+		str = string(t)
+	default:
+		str = string(t.SexpString())
+	}
+
+	dir := filepath.Dir(str)
+	base := filepath.Base(str)
+	ext := filepath.Ext(str)
+
+	str = filepath.Join(dir, base)
+
+	remain := str[0:(len(str)-len(ext))]
+
+	return glisp.SexpStr(remain), nil
+}
+
+func pathRel(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
+	if len(args) != 2 {
+		return glisp.SexpNull, glisp.WrongNargs
+	}
+
+	fnStr := func(a glisp.Sexp) string {
+		var str string
+		switch t := a.(type) {
+		case glisp.SexpStr:
+			str = string(t)
+		default:
+			str = string(t.SexpString())
+		}
+		return str
+	}
+
+	base := fnStr(args[0])
+	target := fnStr(args[1])
+
+	ret, err := filepath.Rel(base, target)
+	if err != nil {
+		return glisp.SexpNull, fmt.Errorf("Failed filepath.Rel %e", err)
+	}
+
+	return glisp.SexpStr(ret), nil
+}
+
 func ImportFileSys(env *glisp.Glisp) {
 	env.AddFunction("fs-cwd", currentDir)
 	env.AddFunction("fs-chdir", changeDir)
@@ -543,11 +664,16 @@ func ImportFileSys(env *glisp.Glisp) {
 	env.AddFunction("fs-readdir", readDir)
 	env.AddFunction("fs-path-split", pathSplit)
 	env.AddFunction("fs-path-join", pathJoin)
+	env.AddFunction("fs-path-base", pathBaseName)
+	env.AddFunction("fs-path-base-no-ext", pathNoExtension)
+	env.AddFunction("fs-path-ext", pathExtension)
+	env.AddFunction("fs-path-dir", pathDir)
+	env.AddFunction("fs-path-no-ext", pathNoExt)
+	env.AddFunction("fs-path-rel", pathRel)
 	env.AddFunction("fs-file-exists", fileExists)
 	env.AddFunction("fs-file-info", fileInfo)
 	env.AddFunction("fs-read-file", readFile)
 	env.AddFunction("fs-read-file-s", readStreamFile)
 	env.AddFunction("fs-remove-file", removeFile)
 	env.AddFunction("fs-append-file-s", appendStreamFile)
-	env.AddFunction("fs-append-file", appendFile)
 }
