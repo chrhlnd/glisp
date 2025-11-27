@@ -56,9 +56,9 @@ func AppendList(list Sexp, adds []Sexp) Sexp {
 func FoldrPair(env *Glisp, fun SexpFunction, expr Sexp, acc Sexp) (Sexp, error) {
 	var err error
 
-	var fnApplyLast func (Sexp,Sexp) (Sexp, error)
+	var fnApplyLast func(Sexp, Sexp) (Sexp, error)
 
-	fnApplyLast = func (e Sexp, acc Sexp) (Sexp, error) {
+	fnApplyLast = func(e Sexp, acc Sexp) (Sexp, error) {
 		switch pair := e.(type) {
 		case SexpPair:
 			acc, err = fnApplyLast(pair.tail, acc)

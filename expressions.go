@@ -1,10 +1,10 @@
 package glisp
 
 import (
+	"bytes"
 	"reflect"
 	"strconv"
 	"strings"
-	"bytes"
 )
 
 type Sexp interface {
@@ -148,7 +148,7 @@ func (b SexpData) SexpString() string {
 	str := &bytes.Buffer{}
 	str.WriteString("<")
 	if len(data) > 0 {
-		for _, v := range data[0:len(data)-1] {
+		for _, v := range data[0 : len(data)-1] {
 			str.WriteString(strconv.Itoa(int(v)))
 			str.WriteRune(',')
 		}

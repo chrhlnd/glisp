@@ -30,7 +30,6 @@ func AppendStr(str SexpStr, expr Sexp) (SexpStr, error) {
 	return str + SexpStr(chr), nil
 }
 
-
 func FoldrString(env *Glisp, fun SexpFunction, arr SexpStr, acc Sexp) (Sexp, error) {
 	var err error
 
@@ -56,4 +55,3 @@ func FoldlString(env *Glisp, fun SexpFunction, arr SexpStr, acc Sexp) (Sexp, err
 
 	return acc, nil
 }
-

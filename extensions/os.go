@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"os"
 	"fmt"
-	"log"
+	//"log"
 )
 
 func execFunction(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
@@ -49,7 +49,7 @@ func execFunction(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp,
 		return glisp.SexpNull, fmt.Errorf("First param must be an (list|array), index 0 is the command the rest are params, got %T", args[0])
 	}
 
-	log.Print("execing ", cmds)
+	//log.Print("execing ", cmds)
 
 	cmd := exec.Command(cmds[0], cmds[1:]...)
 

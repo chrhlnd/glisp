@@ -2,13 +2,13 @@ package glisp
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
-	"encoding/binary"
+	"reflect"
 	"strconv"
 	"strings"
-	"reflect"
 )
 
 var WrongNargs error = errors.New("wrong number of arguments")
@@ -411,7 +411,6 @@ func ConcatFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 
 	coalesce := name[0] == '?'
 
-
 	var err error
 
 	switch t := args[0].(type) {
@@ -424,7 +423,7 @@ func ConcatFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 			if err != nil {
 				return nil, err
 			}
-		}	
+		}
 		return t, nil
 	case SexpStr:
 		for _, arg := range args[1:] {
@@ -453,7 +452,6 @@ func ConcatFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	case SexpData:
 		return MakeDataFunction(env, name, args)
 	}
-
 
 	return SexpNull, fmt.Errorf("expected string|data|array|pair got %T", args[0])
 }
@@ -535,9 +533,8 @@ func PrintFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 
 	var str string
 
-
 	for _, arg := range args {
-	switch expr := arg.(type) {
+		switch expr := arg.(type) {
 		case SexpStr:
 			str = string(expr)
 		default:
@@ -601,19 +598,19 @@ func FoldlData(env *Glisp, fun SexpFunction, data SexpData, acc Sexp, sz int) (S
 
 	walk := []byte(data)
 
-	chunks := len(walk)/sz
+	chunks := len(walk) / sz
 
 	for i := 0; i < chunks; i++ {
-		acc, err = env.Apply(fun, []Sexp{SexpData(walk[i*sz:i*sz+sz]), acc})
+		acc, err = env.Apply(fun, []Sexp{SexpData(walk[i*sz : i*sz+sz]), acc})
 		if err != nil {
 			return acc, err
 		}
 	}
 
-	if len(walk) > chunks * sz {
-		remain := len(walk) - chunks * sz
+	if len(walk) > chunks*sz {
+		remain := len(walk) - chunks*sz
 
-		acc, err = env.Apply(fun, []Sexp{SexpData(walk[chunks*sz:chunks*sz+remain]), acc})
+		acc, err = env.Apply(fun, []Sexp{SexpData(walk[chunks*sz : chunks*sz+remain]), acc})
 		if err != nil {
 			return acc, err
 		}
@@ -658,7 +655,6 @@ func FoldRFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 
 	return SexpNull, fmt.Errorf("first argument must be pair, array, list, hash, or data, had type `%T` val %v", args[1], args[1])
 }
-
 
 func FoldLFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	if len(args) < 3 {
@@ -720,7 +716,6 @@ func MapFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	}
 	return SexpNull, fmt.Errorf("second argument must be array, list or hash, had type `%T` val %v", args[1], args[1])
 }
-
 
 func makeData(i *int, data *bytes.Buffer, thing Sexp) error {
 	var err error
@@ -917,80 +912,79 @@ func MakeUserFunction(name string, ufun GlispUserFunction) SexpFunction {
 }
 
 var BuiltinFunctions = map[string]GlispUserFunction{
-	"<":          CompareFunction,
-	">":          CompareFunction,
-	"<=":         CompareFunction,
-	">=":         CompareFunction,
-	"=":          CompareFunction,
-	"not=":       CompareFunction,
-	"sll":        BinaryIntFunction,
-	"sra":        BinaryIntFunction,
-	"srl":        BinaryIntFunction,
-	"mod":        BinaryIntFunction,
-	"+":          NumericFunction,
-	"-":          NumericFunction,
-	"*":          NumericFunction,
-	"/":          NumericFunction,
-	"bit-and":    BitwiseFunction,
-	"bit-or":     BitwiseFunction,
-	"bit-xor":    BitwiseFunction,
-	"bit-not":    ComplementFunction,
-	"read":       ReadFunction,
-	"cons":       ConsFunction,
-	"first":      FirstFunction,
-	"rest":       RestFunction,
-	"car":        FirstFunction,
-	"cdr":        RestFunction,
-	"list?":      TypeQueryFunction,
-	"null?":      TypeQueryFunction,
-	"array?":     TypeQueryFunction,
-	"hash?":      TypeQueryFunction,
-	"number?":    TypeQueryFunction,
-	"int?":       TypeQueryFunction,
-	"float?":     TypeQueryFunction,
-	"char?":      TypeQueryFunction,
-	"symbol?":    TypeQueryFunction,
-	"string?":    TypeQueryFunction,
-	"zero?":      TypeQueryFunction,
-	"empty?":     TypeQueryFunction,
-	"pair?":      TypeQueryFunction,
-	"data?":      TypeQueryFunction,
-	"println":    PrintFunction,
-	"print":      PrintFunction,
-	"not":        NotFunction,
-	"apply":      ApplyFunction,
-	"map":        MapFunction,
-	"foldl":      FoldLFunction,
-	"foldr":      FoldRFunction,
-	"make-array": MakeArrayFunction,
-	"make-data":  MakeDataFunction,
-	"aget":       ArrayAccessFunction,
-	"aset!":      ArrayAccessFunction,
-	"sget":       SgetFunction,
-	"hget":       HashAccessFunction,
-	"hset!":      HashAccessFunction,
-	"hdel!":      HashAccessFunction,
-	"hclear!":    HashClear,
-	"slice":      SliceFunction,
-	"len":        LenFunction,
-	"append":     AppendFunction,
-	"?append":    AppendFunction,
-	"concat":     ConcatFunction,
-	"?concat":    ConcatFunction,
-	"array":      ConstructorFunction,
-	"list":       ConstructorFunction,
-	"hash":       ConstructorFunction,
-	"symnum":     SymnumFunction,
-	"str":        StringifyFunction,
-	"cvert-str":    ConvertFunction,
-	"cvert-int64":  ConvertFunction,
-	"cvert-int32":  ConvertFunction,
-	"cvert-float32":  ConvertFunction,
-	"cvert-float64":  ConvertFunction,
-	"ends-with" : MatchEndFunction,
-	"begins-with" : MatchEndFunction,
+	"<":             CompareFunction,
+	">":             CompareFunction,
+	"<=":            CompareFunction,
+	">=":            CompareFunction,
+	"=":             CompareFunction,
+	"not=":          CompareFunction,
+	"sll":           BinaryIntFunction,
+	"sra":           BinaryIntFunction,
+	"srl":           BinaryIntFunction,
+	"mod":           BinaryIntFunction,
+	"+":             NumericFunction,
+	"-":             NumericFunction,
+	"*":             NumericFunction,
+	"/":             NumericFunction,
+	"bit-and":       BitwiseFunction,
+	"bit-or":        BitwiseFunction,
+	"bit-xor":       BitwiseFunction,
+	"bit-not":       ComplementFunction,
+	"read":          ReadFunction,
+	"cons":          ConsFunction,
+	"first":         FirstFunction,
+	"rest":          RestFunction,
+	"car":           FirstFunction,
+	"cdr":           RestFunction,
+	"list?":         TypeQueryFunction,
+	"null?":         TypeQueryFunction,
+	"array?":        TypeQueryFunction,
+	"hash?":         TypeQueryFunction,
+	"number?":       TypeQueryFunction,
+	"int?":          TypeQueryFunction,
+	"float?":        TypeQueryFunction,
+	"char?":         TypeQueryFunction,
+	"symbol?":       TypeQueryFunction,
+	"string?":       TypeQueryFunction,
+	"zero?":         TypeQueryFunction,
+	"empty?":        TypeQueryFunction,
+	"pair?":         TypeQueryFunction,
+	"data?":         TypeQueryFunction,
+	"println":       PrintFunction,
+	"print":         PrintFunction,
+	"not":           NotFunction,
+	"apply":         ApplyFunction,
+	"map":           MapFunction,
+	"foldl":         FoldLFunction,
+	"foldr":         FoldRFunction,
+	"make-array":    MakeArrayFunction,
+	"make-data":     MakeDataFunction,
+	"aget":          ArrayAccessFunction,
+	"aset!":         ArrayAccessFunction,
+	"sget":          SgetFunction,
+	"hget":          HashAccessFunction,
+	"hset!":         HashAccessFunction,
+	"hdel!":         HashAccessFunction,
+	"hclear!":       HashClear,
+	"slice":         SliceFunction,
+	"len":           LenFunction,
+	"append":        AppendFunction,
+	"?append":       AppendFunction,
+	"concat":        ConcatFunction,
+	"?concat":       ConcatFunction,
+	"array":         ConstructorFunction,
+	"list":          ConstructorFunction,
+	"hash":          ConstructorFunction,
+	"symnum":        SymnumFunction,
+	"str":           StringifyFunction,
+	"cvert-str":     ConvertFunction,
+	"cvert-int64":   ConvertFunction,
+	"cvert-int32":   ConvertFunction,
+	"cvert-float32": ConvertFunction,
+	"cvert-float64": ConvertFunction,
+	"ends-with":     MatchEndFunction,
+	"begins-with":   MatchEndFunction,
 }
-
 
 // (ends-with <haystack> <needle>)
 // (begins-with <haystack> <needle>)
@@ -1031,24 +1025,27 @@ func ConvertFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	}
 
 	switch name {
-		case "cvert-str": {
+	case "cvert-str":
+		{
 			buffer := &bytes.Buffer{}
 			for _, arg := range args {
 				switch t := arg.(type) {
-					case SexpData:
-						buffer.WriteString(string([]byte(t)))
-					break;
-					default:
-						buffer.WriteString(arg.SexpString())
+				case SexpData:
+					buffer.WriteString(string([]byte(t)))
+					break
+				default:
+					buffer.WriteString(arg.SexpString())
 				}
 			}
 			return SexpStr(buffer.String()), nil
 		}
-		case "cvert-int64": {
+	case "cvert-int64":
+		{
 			var ret []Sexp
 			for i, arg := range args {
 				switch t := arg.(type) {
-					case SexpData: {
+				case SexpData:
+					{
 						buffer := bytes.NewBuffer([]byte(t))
 						var value int64
 						err := binary.Read(buffer, binary.LittleEndian, &value)
@@ -1057,34 +1054,39 @@ func ConvertFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 						}
 						ret = append(ret, SexpInt(int(value)))
 					}
-					case SexpStr: {
+				case SexpStr:
+					{
 						val, err := strconv.Atoi(string(t))
 						if err != nil {
 							return SexpNull, fmt.Errorf("%T: failed converting %v arg into int; %v", arg, i, err)
 						}
 						ret = append(ret, SexpInt(val))
 					}
-					case SexpFloat: {
+				case SexpFloat:
+					{
 						ret = append(ret, SexpInt(int(float64(t))))
 					}
-					case SexpBool: {
+				case SexpBool:
+					{
 						if bool(t) {
 							ret = append(ret, SexpInt(1))
 						} else {
 							ret = append(ret, SexpInt(0))
 						}
 					}
-					default:
-						return SexpNull, fmt.Errorf("%v unable to convert arg %v into int; unimplemented", name, i)
+				default:
+					return SexpNull, fmt.Errorf("%v unable to convert arg %v into int; unimplemented", name, i)
 				}
 			}
 			return SexpArray(ret), nil
 		}
-		case "cvert-int32": {
+	case "cvert-int32":
+		{
 			var ret []Sexp
 			for i, arg := range args {
 				switch t := arg.(type) {
-					case SexpData: {
+				case SexpData:
+					{
 						buffer := bytes.NewBuffer([]byte(t))
 						var value int32
 						err := binary.Read(buffer, binary.LittleEndian, &value)
@@ -1093,34 +1095,39 @@ func ConvertFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 						}
 						ret = append(ret, SexpInt(int(value)))
 					}
-					case SexpStr: {
+				case SexpStr:
+					{
 						val, err := strconv.Atoi(string(t))
 						if err != nil {
 							return SexpNull, fmt.Errorf("%T: failed converting %v arg into int; %v", arg, i, err)
 						}
 						ret = append(ret, SexpInt(val))
 					}
-					case SexpFloat: {
+				case SexpFloat:
+					{
 						ret = append(ret, SexpInt(int(float64(t))))
 					}
-					case SexpBool: {
+				case SexpBool:
+					{
 						if bool(t) {
 							ret = append(ret, SexpInt(1))
 						} else {
 							ret = append(ret, SexpInt(0))
 						}
 					}
-					default:
-						return SexpNull, fmt.Errorf("%v unable to convert arg %v into int; unimplemented", name, i)
+				default:
+					return SexpNull, fmt.Errorf("%v unable to convert arg %v into int; unimplemented", name, i)
 				}
 			}
 			return SexpArray(ret), nil
 		}
-		case "cvert-float32": {
+	case "cvert-float32":
+		{
 			var ret []Sexp
 			for i, arg := range args {
 				switch t := arg.(type) {
-					case SexpData: {
+				case SexpData:
+					{
 						buffer := bytes.NewBuffer([]byte(t))
 						var value float32
 						err := binary.Read(buffer, binary.LittleEndian, &value)
@@ -1129,34 +1136,39 @@ func ConvertFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 						}
 						ret = append(ret, SexpFloat(value))
 					}
-					case SexpStr: {
+				case SexpStr:
+					{
 						val, err := strconv.ParseFloat(string(t), 32)
 						if err != nil {
 							return SexpNull, fmt.Errorf("%T: failed converting %v arg into int; %v", arg, i, err)
 						}
 						ret = append(ret, SexpFloat(val))
 					}
-					case SexpInt: {
+				case SexpInt:
+					{
 						ret = append(ret, SexpFloat(float64(int(t))))
 					}
-					case SexpBool: {
+				case SexpBool:
+					{
 						if bool(t) {
 							ret = append(ret, SexpFloat(1))
 						} else {
 							ret = append(ret, SexpFloat(0))
 						}
 					}
-					default:
-						return SexpNull, fmt.Errorf("%v unable to convert arg %v into int; unimplemented", name, i)
+				default:
+					return SexpNull, fmt.Errorf("%v unable to convert arg %v into int; unimplemented", name, i)
 				}
 			}
 			return SexpArray(ret), nil
 		}
-		case "cvert-float64": {
+	case "cvert-float64":
+		{
 			var ret []Sexp
 			for i, arg := range args {
 				switch t := arg.(type) {
-					case SexpData: {
+				case SexpData:
+					{
 						buffer := bytes.NewBuffer([]byte(t))
 						var value float64
 						err := binary.Read(buffer, binary.LittleEndian, &value)
@@ -1165,25 +1177,28 @@ func ConvertFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 						}
 						ret = append(ret, SexpFloat(value))
 					}
-					case SexpStr: {
+				case SexpStr:
+					{
 						val, err := strconv.ParseFloat(string(t), 64)
 						if err != nil {
 							return SexpNull, fmt.Errorf("%T: failed converting %v arg into int; %v", arg, i, err)
 						}
 						ret = append(ret, SexpFloat(val))
 					}
-					case SexpInt: {
+				case SexpInt:
+					{
 						ret = append(ret, SexpFloat(float64(int(t))))
 					}
-					case SexpBool: {
+				case SexpBool:
+					{
 						if bool(t) {
 							ret = append(ret, SexpFloat(1))
 						} else {
 							ret = append(ret, SexpFloat(0))
 						}
 					}
-					default:
-						return SexpNull, fmt.Errorf("%v unable to convert arg %v into int; unimplemented", name, i)
+				default:
+					return SexpNull, fmt.Errorf("%v unable to convert arg %v into int; unimplemented", name, i)
 				}
 			}
 			return SexpArray(ret), nil
