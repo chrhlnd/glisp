@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"os"
 	"fmt"
-//	"log"
+	"log"
 )
 
 func execFunction(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
@@ -16,19 +16,40 @@ func execFunction(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp,
 	var ok bool
 	var cmdAry glisp.SexpArray
 
-	if cmdAry, ok = args[0].(glisp.SexpArray); !ok {
-		return glisp.SexpNull, fmt.Errorf("First param must be an array, index 0 is the command the rest are params")
-	}
+	var cmds []string
 
-	cmds := make([]string, len(cmdAry))
-
-	for i, v := range cmdAry {
-		if sv, ok := v.(glisp.SexpStr); !ok {
-			return glisp.SexpNull, fmt.Errorf("Cmd array must contain strings; index %v had %T", i, v)
-		} else {
-			cmds[i] = string(sv)
+	if cmdAry, ok = args[0].(glisp.SexpArray); ok {
+		cmds = make([]string, len(cmdAry))
+		for i, v := range cmdAry {
+			if sv, ok := v.(glisp.SexpStr); !ok {
+				return glisp.SexpNull, fmt.Errorf("Cmd array must contain strings; index %v had %T", i, v)
+			} else {
+				cmds[i] = string(sv)
+			}
 		}
+	} else if cmdPair, ok := args[0].(glisp.SexpPair); ok {
+		cmds = make([]string, 0, 3)
+		i := 0
+		cur := cmdPair
+		for {
+			if sv, ok := cur.Head().(glisp.SexpStr); !ok {
+				return glisp.SexpNull, fmt.Errorf("Cmd list must contain strings; index %v had %T", i, cur.Head())
+			} else {
+				cmds = append(cmds, string(sv))
+			}
+
+			if next, ok := cur.Tail().(glisp.SexpPair); !ok {
+				break
+			} else {
+				cur = next
+				i++
+			}
+		}
+	} else {
+		return glisp.SexpNull, fmt.Errorf("First param must be an (list|array), index 0 is the command the rest are params, got %T", args[0])
 	}
+
+	log.Print("execing ", cmds)
 
 	cmd := exec.Command(cmds[0], cmds[1:]...)
 
