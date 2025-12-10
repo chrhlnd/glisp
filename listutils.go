@@ -129,6 +129,24 @@ func MapList(env *Glisp, fun SexpFunction, expr Sexp) (Sexp, error) {
 	return list, nil
 }
 
+func WalkList(expr Sexp, visit func(Sexp)) {
+	if expr == SexpNull {
+		return
+	}
+	
+	var list SexpPair
+	switch e := expr.(type) {
+	case SexpPair:
+		list = e
+	default:
+		return
+	}
+	
+	visit(list.head)
+	
+	WalkList(list.tail, visit)
+}
+
 func ConcatList(a SexpPair, b Sexp) (Sexp, error) {
 	if !IsList(b) {
 		return SexpNull, NotAList
