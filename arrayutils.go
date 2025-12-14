@@ -44,6 +44,14 @@ func FoldlArray(env *Glisp, fun SexpFunction, arr SexpArray, acc Sexp) (Sexp, er
 	return acc, nil
 }
 
+func StringArrayToArray(list []string) SexpArray {
+	ret := make([]Sexp, 0, len(list))
+	for _, v := range list {
+		ret = append(ret, SexpStr(v))
+	}
+	return ret
+}
+
 func ConcatArray(arr SexpArray, expr Sexp) (SexpArray, error) {
 	var arr2 SexpArray
 	switch t := expr.(type) {
