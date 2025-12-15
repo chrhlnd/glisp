@@ -456,6 +456,11 @@ func (env *Glisp) FindObject(name string) (Sexp, bool) {
 	return obj, true
 }
 
+func (env *Glisp) SwapObject(sym SexpSymbol, to Sexp) error {
+	err := env.scopestack.SwapSymbol(sym, to)
+	return err
+}
+
 func (env *Glisp) Apply(fun SexpFunction, args []Sexp) (Sexp, error) {
 	if fun.user {
 		return fun.userfun(env, fun.name, args)

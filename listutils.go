@@ -133,7 +133,7 @@ func WalkList(expr Sexp, visit func(Sexp)) {
 	if expr == SexpNull {
 		return
 	}
-	
+
 	var list SexpPair
 	switch e := expr.(type) {
 	case SexpPair:
@@ -141,9 +141,9 @@ func WalkList(expr Sexp, visit func(Sexp)) {
 	default:
 		return
 	}
-	
+
 	visit(list.head)
-	
+
 	WalkList(list.tail, visit)
 }
 

@@ -180,6 +180,31 @@ func RestFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	return SexpNull, WrongType
 }
 
+func SetFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
+	if len(args) < 2 {
+		return SexpNull, WrongNargs
+	}
+
+	var symbol Sexp
+	count := 0
+	for _, arg := range args {
+		if symbol == nil {
+			if _, ok := arg.(SexpSymbol); !ok {
+				return SexpNull, fmt.Errorf("Expression wasn't a symbol %v arg id %v %T", arg.SexpString(), count, arg)
+			}
+			symbol = arg
+		} else {
+			if err := env.SwapObject(symbol.(SexpSymbol), arg); err != nil {
+				return SexpNull, err
+			}
+			symbol = nil
+		}
+		count++
+	}
+
+	return args[0], nil
+}
+
 func ArrayAccessFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	if len(args) < 2 {
 		return SexpNull, WrongNargs
@@ -961,6 +986,7 @@ var BuiltinFunctions = map[string]GlispUserFunction{
 	"make-data":     MakeDataFunction,
 	"aget":          ArrayAccessFunction,
 	"aset!":         ArrayAccessFunction,
+	"set!":          SetFunction,
 	"sget":          SgetFunction,
 	"hget":          HashAccessFunction,
 	"hset!":         HashAccessFunction,
