@@ -8,10 +8,16 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"sync"
 )
 
 type PreHook func(*Glisp, string, []Sexp)
 type PostHook func(*Glisp, string, Sexp)
+
+type queueApply struct {
+	fun  SexpFunction
+	args []Sexp
+}
 
 type Glisp struct {
 	datastack   *Stack
@@ -28,6 +34,8 @@ type Glisp struct {
 	nextsymbol  int
 	before      []PreHook
 	after       []PostHook
+	queueLock   *sync.Mutex
+	queued      []queueApply
 }
 
 const CallStackSize = 25
@@ -49,6 +57,8 @@ func NewGlisp() *Glisp {
 	env.nextsymbol = 1
 	env.before = []PreHook{}
 	env.after = []PostHook{}
+	env.queueLock = &sync.Mutex{}
+	env.queued = make([]queueApply, 0, 3)
 
 	for key, function := range BuiltinFunctions {
 		sym := env.MakeSymbol(key)
@@ -461,6 +471,12 @@ func (env *Glisp) SwapObject(sym SexpSymbol, to Sexp) error {
 	return err
 }
 
+func (env *Glisp) QueueApply(fun SexpFunction, args []Sexp) {
+	env.queueLock.Lock()
+	env.queued = append(env.queued, queueApply{fun, args})
+	env.queueLock.Unlock()
+}
+
 func (env *Glisp) Apply(fun SexpFunction, args []Sexp) (Sexp, error) {
 	if fun.user {
 		return fun.userfun(env, fun.name, args)
@@ -480,21 +496,74 @@ func (env *Glisp) Apply(fun SexpFunction, args []Sexp) (Sexp, error) {
 	return env.Run()
 }
 
-func (env *Glisp) Run() (Sexp, error) {
-	for env.pc != -1 && !env.ReachedEnd() {
-		instr := env.curfunc.fun[env.pc]
-		err := instr.Execute(env)
-		if err != nil {
-			return SexpNull, err
-		}
-	}
+func (env *Glisp) IsDone() bool {
+	return env.pc == -1 || env.ReachedEnd()
+}
 
+func (env *Glisp) Finish() (Sexp, error) {
 	if env.datastack.IsEmpty() {
 		env.DumpEnvironment()
 		os.Exit(-1)
 	}
 
 	return env.datastack.PopExpr()
+}
+
+func (env *Glisp) Step() (Sexp, error) {
+	if !env.IsDone() {
+		instr := env.curfunc.fun[env.pc]
+		err := instr.Execute(env)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if env.IsDone() {
+		return env.Finish()
+	}
+
+	return nil, nil
+}
+
+func (env *Glisp) CallQueued() error {
+	env.queueLock.Lock()
+	if len(env.queued) == 0 {
+		env.queueLock.Unlock()
+		return nil
+	}
+
+	apply := make([]queueApply, len(env.queued))
+	copy(apply, env.queued)
+	env.queued = env.queued[:0]
+	env.queueLock.Unlock()
+
+	for _, call := range apply {
+		_, err := env.Apply(call.fun, call.args)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (env *Glisp) Run() (Sexp, error) {
+	var exp Sexp
+	var err error
+
+	err = env.CallQueued()
+	if err != nil {
+		return SexpNull, err
+	}
+
+	for !env.IsDone() {
+		exp, err = env.Step()
+		if err != nil {
+			return SexpNull, err
+		}
+	}
+
+	return exp, err
 }
 
 func (env *Glisp) AddPreHook(fun PreHook) {
