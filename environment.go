@@ -551,11 +551,6 @@ func (env *Glisp) Run() (Sexp, error) {
 	var exp Sexp
 	var err error
 
-	err = env.CallQueued()
-	if err != nil {
-		return SexpNull, err
-	}
-
 	for !env.IsDone() {
 		exp, err = env.Step()
 		if err != nil {

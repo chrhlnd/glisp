@@ -5,51 +5,174 @@ import (
 	"os/exec"
 	"os"
 	"fmt"
-	//"log"
 )
+
+func parseCmdArgs(arg glisp.Sexp) ([]string, error) {
+	var cmds []string
+
+	switch lst := arg.(type) {
+	case glisp.SexpArray:
+		cmds = make([]string, 0, len(lst))
+		for i, v := range lst {
+			switch vt := v.(type) {
+			case glisp.SexpStr:
+				cmds = append(cmds, string(vt))
+			default:
+				return nil, fmt.Errorf("Cmd array must contain strings; index %v had %T", i, v)
+			}
+		}
+	case glisp.SexpPair:
+		cmds = make([]string, 0, 5)
+		cur := lst
+		i := 0
+		walkList:
+		for {
+			switch vt := cur.Head().(type) {
+			case glisp.SexpStr:
+				cmds = append(cmds, string(vt))
+			default:
+				return nil, fmt.Errorf("Cmd list must contain strings; index %v had %T", i, cur.Head())
+			}
+
+			switch vt := cur.Tail().(type) {
+			case glisp.SexpPair:
+				cur = vt
+			default:
+				break walkList
+			}
+			i++
+		}
+	default:
+		return nil, fmt.Errorf("First param must be an (list|array), index 0 is the command the rest are params, got %T",
+								arg)
+	}
+
+	return cmds, nil
+}
+
+var s_spawn_counter int = 0
+var s_spawns map[int]*exec.Cmd = make(map[int]*exec.Cmd)
+
+func SpawnWaitAll() []error {
+	var errs []error
+
+	for _, v := range s_spawns {
+		err := v.Wait()
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	s_spawns = make(map[int]*exec.Cmd)
+
+	return errs
+}
+
+func SpawnKillAll() []error {
+	var errs []error
+
+	for _, v := range s_spawns {
+		if v.Process != nil {
+			err := v.Process.Kill()
+			if err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+
+	s_spawns = make(map[int]*exec.Cmd)
+
+	return errs
+}
+
+func execSpawnKill(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
+	if len(args) != 1 {
+		return glisp.SexpNull, glisp.WrongNargs
+	}
+
+	spawnId := int(args[0].(glisp.SexpInt))
+
+	v, ok := s_spawns[spawnId]
+	if !ok {
+		return glisp.SexpNull, fmt.Errorf("invalid spawnid %v", spawnId)
+	}
+
+	if v.Process == nil {
+		return glisp.SexpNull, nil
+	}
+
+	err := v.Process.Kill()
+
+	delete(s_spawns, spawnId)
+
+	return glisp.SexpNull, err
+}
+
+func execSpawnWait(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
+	if len(args) != 1 {
+		return glisp.SexpNull, glisp.WrongNargs
+	}
+
+	spawnId := int(args[0].(glisp.SexpInt))
+
+	v, ok := s_spawns[spawnId]
+	if !ok {
+		return glisp.SexpNull, fmt.Errorf("invalid spawnid %v", spawnId)
+	}
+
+	err := v.Wait()
+
+	delete(s_spawns, spawnId)
+
+	return glisp.SexpNull, err
+}
+
+func execSpawn(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
+	if len(args) < 1 {
+		return glisp.SexpNull, glisp.WrongNargs
+	}
+
+	cmds, err := parseCmdArgs(args[0])
+	if err != nil {
+		return glisp.SexpNull, err
+	}
+
+	cmd := exec.Command(cmds[0], cmds[1:]...)
+
+	cmd.Env = os.Environ()
+
+	for _, line := range args[1:] {
+		if sline, ok := line.(glisp.SexpStr); ok {
+			cmd.Env = append(cmd.Env, string(sline))
+		}
+	}
+
+	envArr := make([]glisp.Sexp, len(cmd.Env))
+	for i, v := range cmd.Env {
+		envArr[i] = glisp.SexpStr(v)
+	}
+
+	err = cmd.Start()
+	if err != nil {
+		return glisp.SexpNull, err
+	}
+
+	s_spawn_counter++
+	id := s_spawn_counter
+	s_spawns[id] = cmd
+
+	return glisp.SexpInt(id), nil
+}
 
 func execFunction(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
 	if len(args) < 1 {
 		return glisp.SexpNull, glisp.WrongNargs
 	}
 
-	var ok bool
-	var cmdAry glisp.SexpArray
-
-	var cmds []string
-
-	if cmdAry, ok = args[0].(glisp.SexpArray); ok {
-		cmds = make([]string, len(cmdAry))
-		for i, v := range cmdAry {
-			if sv, ok := v.(glisp.SexpStr); !ok {
-				return glisp.SexpNull, fmt.Errorf("Cmd array must contain strings; index %v had %T", i, v)
-			} else {
-				cmds[i] = string(sv)
-			}
-		}
-	} else if cmdPair, ok := args[0].(glisp.SexpPair); ok {
-		cmds = make([]string, 0, 3)
-		i := 0
-		cur := cmdPair
-		for {
-			if sv, ok := cur.Head().(glisp.SexpStr); !ok {
-				return glisp.SexpNull, fmt.Errorf("Cmd list must contain strings; index %v had %T", i, cur.Head())
-			} else {
-				cmds = append(cmds, string(sv))
-			}
-
-			if next, ok := cur.Tail().(glisp.SexpPair); !ok {
-				break
-			} else {
-				cur = next
-				i++
-			}
-		}
-	} else {
-		return glisp.SexpNull, fmt.Errorf("First param must be an (list|array), index 0 is the command the rest are params, got %T", args[0])
+	cmds, err := parseCmdArgs(args[0])
+	if err != nil {
+		return glisp.SexpNull, err
 	}
-
-	//log.Print("execing ", cmds)
 
 	cmd := exec.Command(cmds[0], cmds[1:]...)
 
@@ -142,6 +265,9 @@ func getEnvironFunction(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp
 
 func ImportOs(env *glisp.Glisp) {
 	env.AddFunction("os-exec", execFunction)
+	env.AddFunction("os-spawn", execSpawn)
+	env.AddFunction("os-spawn-kill", execSpawnKill)
+	env.AddFunction("os-spawn-wait", execSpawnWait)
 	env.AddFunction("os-lookpath", lookPathFunction)
 	env.AddFunction("os-getenv", getEnvFunction)
 	env.AddFunction("os-environ", getEnvironFunction)

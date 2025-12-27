@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"reflect"
 	"strconv"
@@ -551,6 +552,27 @@ func TypeQueryFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	return SexpBool(result), nil
 }
 
+func LogFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
+	if len(args) < 1 {
+		return SexpNull, WrongNargs
+	}
+
+	var str string
+
+	for _, arg := range args {
+		switch expr := arg.(type) {
+		case SexpStr:
+			str = string(expr)
+		default:
+			str = expr.SexpString()
+		}
+
+		log.Print(str)
+	}
+
+	return SexpNull, nil
+}
+
 func PrintFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	if len(args) < 1 {
 		return SexpNull, WrongNargs
@@ -977,6 +999,7 @@ var BuiltinFunctions = map[string]GlispUserFunction{
 	"data?":         TypeQueryFunction,
 	"println":       PrintFunction,
 	"print":         PrintFunction,
+	"plog":          LogFunction,
 	"not":           NotFunction,
 	"apply":         ApplyFunction,
 	"map":           MapFunction,
