@@ -2,9 +2,11 @@ package glispext
 
 import (
 	"github.com/chrhlnd/glisp"
+	"github.com/mitchellh/go-ps"
 	"os/exec"
 	"os"
 	"fmt"
+//	"log"
 )
 
 func parseCmdArgs(arg glisp.Sexp) ([]string, error) {
@@ -101,11 +103,15 @@ func execSpawnKill(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp
 		return glisp.SexpNull, nil
 	}
 
-	err := v.Process.Kill()
+	if v.ProcessState == nil || !v.ProcessState.Exited() {
+		v.Process.Kill()
+	}
+
+	v.Wait()
 
 	delete(s_spawns, spawnId)
 
-	return glisp.SexpNull, err
+	return glisp.SexpInt(v.ProcessState.ExitCode()), nil
 }
 
 func execSpawnWait(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
@@ -125,6 +131,25 @@ func execSpawnWait(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp
 	delete(s_spawns, spawnId)
 
 	return glisp.SexpNull, err
+}
+
+func execSpawnIsAlive(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
+	if len(args) != 1 {
+		return glisp.SexpNull, glisp.WrongNargs
+	}
+
+	spawnId := int(args[0].(glisp.SexpInt))
+
+	v, ok := s_spawns[spawnId]
+	if !ok {
+		return glisp.SexpBool(ok), nil
+	}
+
+	p, err := ps.FindProcess(v.Process.Pid)
+
+	ret := p != nil && err == nil
+
+	return glisp.SexpBool(ret), nil
 }
 
 func execSpawn(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
@@ -268,6 +293,7 @@ func ImportOs(env *glisp.Glisp) {
 	env.AddFunction("os-spawn", execSpawn)
 	env.AddFunction("os-spawn-kill", execSpawnKill)
 	env.AddFunction("os-spawn-wait", execSpawnWait)
+	env.AddFunction("os-spawn-isalive", execSpawnIsAlive)
 	env.AddFunction("os-lookpath", lookPathFunction)
 	env.AddFunction("os-getenv", getEnvFunction)
 	env.AddFunction("os-environ", getEnvironFunction)

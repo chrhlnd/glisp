@@ -1,2 +1,2 @@
-github.com/chrhlnd/glisp v0.0.0-20251125235717-7e1420f08b1f h1:rfgpa0UwZN28koA/oA0URKXrN+rfob6vp5JQuaHQeyI=
-github.com/chrhlnd/glisp v0.0.0-20251125235717-7e1420f08b1f/go.mod h1:jjbzQ/fI6Ebf/4OVkCXcZBCX8Gvj8Und+Yg79oeYbZM=
+github.com/mitchellh/go-ps v1.0.0 h1:i6ampVEEF4wQFF+bkYfwYgY+F/uYJDktmvLPf7qIgjc=
+github.com/mitchellh/go-ps v1.0.0/go.mod h1:J4lOc8z8yJs6vUwklHw2XEIiT4z4C40KtWVN3nvg8Pg=
