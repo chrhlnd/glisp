@@ -146,6 +146,8 @@ func ParseExpression(parser *Parser) (Sexp, error) {
 	}
 
 	switch tok.typ {
+	case TokenNil:
+		return SexpNull, nil
 	case TokenLParen:
 		return ParseList(parser)
 	case TokenLSquare:

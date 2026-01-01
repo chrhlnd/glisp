@@ -427,7 +427,7 @@ func AppendFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 		return AppendList(t, args[1:]), nil
 	}
 
-	return SexpNull, fmt.Errorf("Expected first arg to be (array|string|data|list) got %T", args[0])
+	return SexpNull, fmt.Errorf("%v, expected first arg to be (array|string|data|list) got %T", name, args[0])
 }
 
 func ConcatFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
@@ -479,7 +479,7 @@ func ConcatFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 		return MakeDataFunction(env, name, args)
 	}
 
-	return SexpNull, fmt.Errorf("expected string|data|array|pair got %T", args[0])
+	return SexpNull, fmt.Errorf("%v, expected first arg (string|data|array|pair) got %T", name, args[0])
 }
 
 func ReadFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
@@ -666,6 +666,32 @@ func FoldlData(env *Glisp, fun SexpFunction, data SexpData, acc Sexp, sz int) (S
 	return acc, nil
 }
 
+func FoldrData(env *Glisp, fun SexpFunction, data SexpData, acc Sexp, sz int) (Sexp, error) {
+	var err error
+
+	walk := []byte(data)
+
+	chunks := len(walk) / sz
+
+	for i := chunks - 1; i > -1; i-- {
+		acc, err = env.Apply(fun, []Sexp{SexpData(walk[i*sz : i*sz+sz]), acc})
+		if err != nil {
+			return acc, err
+		}
+	}
+
+	if len(walk) > chunks*sz {
+		remain := len(walk) - chunks*sz
+
+		acc, err = env.Apply(fun, []Sexp{SexpData(walk[0:remain]), acc})
+		if err != nil {
+			return acc, err
+		}
+	}
+
+	return acc, nil
+}
+
 func FoldRFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	if len(args) < 3 {
 		return SexpNull, WrongNargs
@@ -676,7 +702,7 @@ func FoldRFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	case SexpFunction:
 		fun = e
 	default:
-		return SexpNull, fmt.Errorf("second argument must be function had type `%T` val %v", e, e)
+		return SexpNull, fmt.Errorf("%v, second argument must be function had type `%T` val %v", name, e, e)
 	}
 
 	acc := args[2]
@@ -697,10 +723,10 @@ func FoldRFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 				chunkSz = int(sz)
 			}
 		}
-		return FoldlData(env, fun, e, acc, chunkSz)
+		return FoldrData(env, fun, e, acc, chunkSz)
 	}
 
-	return SexpNull, fmt.Errorf("first argument must be pair, array, list, hash, or data, had type `%T` val %v", args[1], args[1])
+	return SexpNull, fmt.Errorf("%v, first argument must be pair, array, list, hash, or data, had type `%T` val %v", name, args[1], args[1])
 }
 
 func FoldLFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {

@@ -32,6 +32,7 @@ const (
 	TokenFloat
 	TokenChar
 	TokenString
+	TokenNil
 	TokenEnd
 )
 
@@ -97,6 +98,7 @@ type Lexer struct {
 }
 
 var (
+	NilRegex     = regexp.MustCompile("^nil$")
 	BoolRegex    = regexp.MustCompile("^(true|false)$")
 	DecimalRegex = regexp.MustCompile("^-?[0-9]+$")
 	HexRegex     = regexp.MustCompile("^0x[0-9a-fA-F]+$")
@@ -157,6 +159,9 @@ func DecodeChar(atom string) (string, error) {
 func DecodeAtom(atom string) (Token, error) {
 	if atom == "." {
 		return Token{TokenDot, ""}, nil
+	}
+	if NilRegex.MatchString(atom) {
+		return Token{TokenNil, atom}, nil
 	}
 	if BoolRegex.MatchString(atom) {
 		return Token{TokenBool, atom}, nil

@@ -1,7 +1,7 @@
 package glisp
 
 import (
-	"errors"
+	"fmt"
 )
 
 func ConcatStr(str SexpStr, expr Sexp) (SexpStr, error) {
@@ -12,7 +12,7 @@ func ConcatStr(str SexpStr, expr Sexp) (SexpStr, error) {
 	case SexpSentinel:
 		str2 = ""
 	default:
-		return SexpStr(""), errors.New("second argument is not a string")
+		return SexpStr(""), fmt.Errorf("concat, second argument is not a string; got %T", expr)
 	}
 
 	return str + str2, nil
@@ -23,8 +23,10 @@ func AppendStr(str SexpStr, expr Sexp) (SexpStr, error) {
 	switch t := expr.(type) {
 	case SexpChar:
 		chr = t
+	case SexpSentinel:
+		return str, nil
 	default:
-		return SexpStr(""), errors.New("second argument is not a char")
+		return SexpStr(""), fmt.Errorf("append, second argument is not a char; got %T", expr)
 	}
 
 	return str + SexpStr(chr), nil

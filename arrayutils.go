@@ -1,7 +1,7 @@
 package glisp
 
 import (
-	"errors"
+	"fmt"
 )
 
 func MapArray(env *Glisp, fun SexpFunction, arr SexpArray) (SexpArray, error) {
@@ -57,8 +57,10 @@ func ConcatArray(arr SexpArray, expr Sexp) (SexpArray, error) {
 	switch t := expr.(type) {
 	case SexpArray:
 		arr2 = t
+	case SexpSentinel:
+		return arr, nil
 	default:
-		return arr, errors.New("second argument is not an array")
+		return arr, fmt.Errorf("concat, second argument is not an array; got %T", expr)
 	}
 
 	return append(arr, arr2...), nil
