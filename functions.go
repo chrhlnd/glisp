@@ -586,6 +586,16 @@ func PrintFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 		switch expr := arg.(type) {
 		case SexpStr:
 			return string(expr)
+		case SexpInt:
+			return fmt.Sprint(int(expr))
+		case SexpBool:
+			return fmt.Sprint(bool(expr))
+		case SexpFloat:
+			return fmt.Sprint(float64(expr))
+		case SexpChar:
+			return fmt.Sprint(rune(expr))
+		case SexpData:
+			return fmt.Sprint([]byte(expr))
 		}
 		return arg.SexpString()
 	}
