@@ -578,23 +578,37 @@ func PrintFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 		return SexpNull, WrongNargs
 	}
 
-	var str string
+	var buf bytes.Buffer
 
-	for _, arg := range args {
+	nCap := 0
+
+	asStr := func(arg Sexp) string {
 		switch expr := arg.(type) {
 		case SexpStr:
-			str = string(expr)
-		default:
-			str = expr.SexpString()
+			return string(expr)
 		}
-
-		switch name {
-		case "println":
-			fmt.Println(str)
-		case "print":
-			fmt.Print(str)
-		}
+		return arg.SexpString()
 	}
+
+	for _, arg := range args {
+		nCap += len(asStr(arg))
+	}
+
+	buf.Grow(nCap)
+
+	buf.WriteString(asStr(args[0]))
+	for _, arg := range args[1:] {
+		if name == "println" {
+			buf.WriteString(" ")
+		}
+		buf.WriteString(asStr(arg))
+	}
+
+	if name == "println" {
+		buf.WriteString("\n")
+	}
+
+	fmt.Print(buf.String())
 
 	return SexpNull, nil
 }
