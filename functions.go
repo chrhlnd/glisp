@@ -597,10 +597,14 @@ func PrintFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	buf.Grow(nCap)
 
 	buf.WriteString(asStr(args[0]))
+	pad := ""
+
+	if name == "println" {
+		pad = " "
+	}
+
 	for _, arg := range args[1:] {
-		if name == "println" {
-			buf.WriteString(" ")
-		}
+		buf.WriteString(pad)
 		buf.WriteString(asStr(arg))
 	}
 
