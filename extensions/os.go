@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"os"
 	"fmt"
-//	"log"
+	"log"
 )
 
 func parseCmdArgs(arg glisp.Sexp) ([]string, error) {
@@ -152,6 +152,122 @@ func execSpawnIsAlive(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.S
 	return glisp.SexpBool(ret), nil
 }
 
+var s_watchers *ReadWatcherCollection = NewReadWatcherCollection()
+
+func stdInRemove(spawnId, watchId int) {
+	s_watchers.RemWatcher(spawnId, watchId)
+}
+
+func execSpawnOnStdOut(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
+	if len(args) != 2 {
+		return glisp.SexpNull, glisp.WrongNargs
+	}
+
+	spawnId := int(args[0].(glisp.SexpInt))
+
+	v, ok := s_spawns[spawnId]
+	if !ok {
+		return glisp.SexpNull, fmt.Errorf("%v, spawn %v doesn't exist", name, spawnId)
+	}
+
+	fn := args[1].(glisp.SexpFunction)
+
+	in, err := v.StdoutPipe()
+	if err != nil {
+		return glisp.SexpNull, err
+	}
+
+	s_watchers.AddWatcher(spawnId, in, func (fnId int, data []byte) {
+		env.QueueRun(func() {
+			res, err := env.Apply(fn, []glisp.Sexp{glisp.SexpData(data)})
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			if !glisp.IsTruthy(res) {
+				s_watchers.RemWatcher(spawnId, fnId)
+			}
+		})
+	})
+
+	return args[0], err
+}
+
+func execSpawnOnStdErr(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
+	if len(args) != 2 {
+		return glisp.SexpNull, glisp.WrongNargs
+	}
+
+	spawnId := int(args[0].(glisp.SexpInt))
+
+	v, ok := s_spawns[spawnId]
+	if !ok {
+		return glisp.SexpNull, nil
+	}
+
+	fn := args[1].(glisp.SexpFunction)
+
+	in, err := v.StderrPipe()
+	if err != nil {
+		return glisp.SexpNull, err
+	}
+
+	s_watchers.AddWatcher(spawnId, in, func (fnId int, data []byte) {
+		env.QueueRun(func() {
+			res, err := env.Apply(fn, []glisp.Sexp{glisp.SexpData(data)})
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			if !glisp.IsTruthy(res) {
+				s_watchers.RemWatcher(spawnId, fnId)
+			}
+		})
+	})
+
+	return args[0], err
+}
+
+func execSpawnStart(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
+	if len(args) != 1 {
+		return glisp.SexpNull, glisp.WrongNargs
+	}
+
+	id := int(args[0].(glisp.SexpInt))
+
+	cmd, ok := s_spawns[id]
+	if !ok {
+		return glisp.SexpNull, fmt.Errorf("%v, invalid spawn id %v", name, id)
+	}
+
+	err := cmd.Start()
+	if err != nil {
+		return glisp.SexpNull, err
+	}
+
+	return args[0], nil
+}
+
+func execSpawnGetEnv(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
+	if len(args) != 1 {
+		return glisp.SexpNull, glisp.WrongNargs
+	}
+
+	id := int(args[0].(glisp.SexpInt))
+
+	cmd, ok := s_spawns[id]
+	if !ok {
+		return glisp.SexpNull, fmt.Errorf("%v, invalid spawn id %v", name, id)
+	}
+
+	envArr := make([]glisp.Sexp, len(cmd.Env))
+	for i, v := range cmd.Env {
+		envArr[i] = glisp.SexpStr(v)
+	}
+
+	return glisp.SexpArray(envArr), nil
+}
+
 func execSpawn(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
 	if len(args) < 1 {
 		return glisp.SexpNull, glisp.WrongNargs
@@ -170,16 +286,6 @@ func execSpawn(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, er
 		if sline, ok := line.(glisp.SexpStr); ok {
 			cmd.Env = append(cmd.Env, string(sline))
 		}
-	}
-
-	envArr := make([]glisp.Sexp, len(cmd.Env))
-	for i, v := range cmd.Env {
-		envArr[i] = glisp.SexpStr(v)
-	}
-
-	err = cmd.Start()
-	if err != nil {
-		return glisp.SexpNull, err
 	}
 
 	s_spawn_counter++
@@ -291,9 +397,13 @@ func getEnvironFunction(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp
 func ImportOs(env *glisp.Glisp) {
 	env.AddFunction("os-exec", execFunction)
 	env.AddFunction("os-spawn", execSpawn)
+	env.AddFunction("os-spawn-get-env", execSpawnGetEnv)
+	env.AddFunction("os-spawn-start", execSpawnStart)
 	env.AddFunction("os-spawn-kill", execSpawnKill)
 	env.AddFunction("os-spawn-wait", execSpawnWait)
 	env.AddFunction("os-spawn-isalive", execSpawnIsAlive)
+	env.AddFunction("os-spawn-on-stdout", execSpawnOnStdOut)
+	env.AddFunction("os-spawn-on-stderr", execSpawnOnStdErr)
 	env.AddFunction("os-lookpath", lookPathFunction)
 	env.AddFunction("os-getenv", getEnvFunction)
 	env.AddFunction("os-environ", getEnvironFunction)

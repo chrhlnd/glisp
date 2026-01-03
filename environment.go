@@ -9,15 +9,12 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 )
 
 type PreHook func(*Glisp, string, []Sexp)
 type PostHook func(*Glisp, string, Sexp)
-
-type queueApply struct {
-	fun  SexpFunction
-	args []Sexp
-}
+type QueueRun func()
 
 type Glisp struct {
 	datastack   *Stack
@@ -35,7 +32,9 @@ type Glisp struct {
 	before      []PreHook
 	after       []PostHook
 	queueLock   *sync.Mutex
-	queued      []queueApply
+	queued      []QueueRun
+	queuedDrain bool
+	queuedHas   *atomic.Bool
 }
 
 const CallStackSize = 25
@@ -58,7 +57,8 @@ func NewGlisp() *Glisp {
 	env.before = []PreHook{}
 	env.after = []PostHook{}
 	env.queueLock = &sync.Mutex{}
-	env.queued = make([]queueApply, 0, 3)
+	env.queued = make([]QueueRun, 0, 3)
+	env.queuedHas = &atomic.Bool{}
 
 	for key, function := range BuiltinFunctions {
 		sym := env.MakeSymbol(key)
@@ -196,7 +196,6 @@ func (env *Glisp) CallFunction(function SexpFunction, nargs int) error {
 	env.scopestack.PushScope()
 	env.curfunc = function
 	env.pc = 0
-
 	return nil
 }
 
@@ -223,9 +222,7 @@ func (env *Glisp) ReturnFromFunction() error {
 	return nil
 }
 
-func (env *Glisp) CallUserFunction(
-	function SexpFunction, name string, nargs int) error {
-
+func (env *Glisp) CallUserFunction(function SexpFunction, name string, nargs int) error {
 	for _, prehook := range env.before {
 		expressions, err := env.datastack.GetExpressions(nargs)
 		if err != nil {
@@ -467,13 +464,13 @@ func (env *Glisp) FindObject(name string) (Sexp, bool) {
 }
 
 func (env *Glisp) SwapObject(sym SexpSymbol, to Sexp) error {
-	err := env.scopestack.SwapSymbol(sym, to)
-	return err
+	return env.scopestack.SwapSymbol(sym, to)
 }
 
-func (env *Glisp) QueueApply(fun SexpFunction, args []Sexp) {
+func (env *Glisp) QueueRun(fn QueueRun) {
+	env.queuedHas.Store(true)
 	env.queueLock.Lock()
-	env.queued = append(env.queued, queueApply{fun, args})
+	env.queued = append(env.queued, fn)
 	env.queueLock.Unlock()
 }
 
@@ -487,13 +484,17 @@ func (env *Glisp) Apply(fun SexpFunction, args []Sexp) (Sexp, error) {
 		env.datastack.PushExpr(expr)
 	}
 
-	//log.Print("Apply Calling ", fun, " with ", len(args))
 	err := env.CallFunction(fun, len(args))
 	if err != nil {
 		return SexpNull, err
 	}
 
-	return env.Run()
+	exp, err := env.Run()
+	if err != nil {
+		return exp, err
+	}
+
+	return exp, err
 }
 
 func (env *Glisp) IsDone() bool {
@@ -526,25 +527,52 @@ func (env *Glisp) Step() (Sexp, error) {
 }
 
 func (env *Glisp) CallQueued() error {
-	env.queueLock.Lock()
-	if len(env.queued) == 0 {
-		env.queueLock.Unlock()
+	if env.queuedDrain || !env.queuedHas.Load() {
 		return nil
 	}
 
-	apply := make([]queueApply, len(env.queued))
-	copy(apply, env.queued)
+	env.queuedHas.Store(false)
+	env.queuedDrain = true
+	env.queueLock.Lock()
+	run := make([]QueueRun, len(env.queued))
+	copy(run, env.queued)
 	env.queued = env.queued[:0]
 	env.queueLock.Unlock()
 
-	for _, call := range apply {
-		_, err := env.Apply(call.fun, call.args)
-		if err != nil {
-			return err
-		}
+	gen := NewGenerator(env)
+	if !env.ReachedEnd() {
+		gen.AddInstruction(PopInstr(0))
 	}
 
-	return nil
+	err := gen.GenerateBegin([]Sexp{SexpNull})
+	if err != nil {
+		env.queuedDrain = false
+		return err
+	}
+
+	curfunc := env.curfunc
+	curpc := env.pc
+
+	env.curfunc = MakeFunction("__queued", 0, false, gen.instructions)
+	env.pc = 0
+
+	env.datastack.PushExpr(SexpNull)
+
+	for _, call := range run {
+		call()
+	}
+
+	_, err = env.Run()
+	env.queuedDrain = false
+
+	env.datastack.PopExpr()
+
+	env.pc = curpc
+	env.curfunc = curfunc
+
+	env.queuedDrain = false
+
+	return err
 }
 
 func (env *Glisp) Run() (Sexp, error) {
@@ -556,6 +584,7 @@ func (env *Glisp) Run() (Sexp, error) {
 		if err != nil {
 			return SexpNull, err
 		}
+		env.CallQueued()
 	}
 
 	return exp, err

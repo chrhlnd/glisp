@@ -557,18 +557,25 @@ func LogFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 		return SexpNull, WrongNargs
 	}
 
-	var str string
+	var buf bytes.Buffer
 
-	for _, arg := range args {
+	switch expr := args[0].(type) {
+	case SexpStr:
+		buf.WriteString(string(expr))
+	default:
+		buf.WriteString(expr.SexpString())
+	}
+
+	for _, arg := range args[1:] {
+		buf.WriteString(" ")
 		switch expr := arg.(type) {
 		case SexpStr:
-			str = string(expr)
+			buf.WriteString(string(expr))
 		default:
-			str = expr.SexpString()
+			buf.WriteString(expr.SexpString())
 		}
-
-		log.Print(str)
 	}
+	log.Print(buf.String())
 
 	return SexpNull, nil
 }
