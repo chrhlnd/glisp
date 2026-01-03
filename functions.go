@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var WrongNargs error = errors.New("wrong number of arguments")
@@ -568,6 +569,8 @@ func TypeQueryFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 		result = IsZero(args[0])
 	case "empty?":
 		result = IsEmpty(args[0])
+	case "bool?":
+		_, result = args[0].(SexpBool)
 	case "seq?":
 		result = IsList(args[0]) || IsPair(args[0]) || IsArray(args[0])
 	}
@@ -956,6 +959,58 @@ func ConstructorFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	return SexpNull, errors.New("invalid constructor")
 }
 
+var signalId int
+var signals map[int]chan Sexp = make(map[int]chan Sexp)
+
+func SignalFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
+	switch len(args) {
+	case 0:
+		signalId++
+		id := signalId
+		signals[id] = make(chan Sexp, 1)
+		return SexpInt(id), nil
+	case 2:
+		id := int(args[0].(SexpInt))
+		signals[id] <- args[1]
+		close(signals[id])
+		return SexpNull, nil
+	}
+	return SexpNull, fmt.Errorf("%v, unknown signal nargs %v", name, len(args))
+}
+
+func WaitFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
+	if len(args) != 2 {
+		return SexpNull, WrongNargs
+	}
+
+	signal := int(args[0].(SexpInt))
+	delayMs := int(args[1].(SexpInt))
+
+	ch, ok := signals[signal]
+	if !ok {
+		return SexpNull, fmt.Errorf("%v, expected param1 to be a signal got %v", name, signal)
+	}
+
+	var ret Sexp
+
+WAIT:
+	for {
+		env.CallQueued()
+
+		select {
+		case val := <-ch:
+			ret = val
+			delete(signals, signal)
+			break WAIT
+		default:
+		}
+
+		time.Sleep(time.Duration(delayMs) * time.Millisecond)
+	}
+
+	return ret, nil
+}
+
 func SymnumFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	if len(args) != 1 {
 		return SexpNull, WrongNargs
@@ -1082,6 +1137,7 @@ var BuiltinFunctions = map[string]GlispUserFunction{
 	"empty?":        TypeQueryFunction,
 	"pair?":         TypeQueryFunction,
 	"data?":         TypeQueryFunction,
+	"bool?":         TypeQueryFunction,
 	"println":       PrintFunction,
 	"print":         PrintFunction,
 	"plog":          LogFunction,
@@ -1118,6 +1174,8 @@ var BuiltinFunctions = map[string]GlispUserFunction{
 	"cvert-float64": ConvertFunction,
 	"ends-with":     MatchEndFunction,
 	"begins-with":   MatchEndFunction,
+	"wait":          WaitFunction,
+	"signal":        SignalFunction,
 }
 
 // (ends-with <haystack> <needle>)
