@@ -126,11 +126,11 @@ func execSpawnWait(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp
 		return glisp.SexpNull, fmt.Errorf("invalid spawnid %v", spawnId)
 	}
 
-	err := v.Wait()
+	v.Wait()
 
 	delete(s_spawns, spawnId)
 
-	return glisp.SexpNull, err
+	return glisp.SexpInt(v.ProcessState.ExitCode()), nil
 }
 
 func execSpawnIsAlive(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
@@ -153,10 +153,6 @@ func execSpawnIsAlive(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.S
 }
 
 var s_watchers *ReadWatcherCollection = NewReadWatcherCollection()
-
-func stdInRemove(spawnId, watchId int) {
-	s_watchers.RemWatcher(spawnId, watchId)
-}
 
 func execSpawnOnStdOut(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
 	if len(args) != 2 {

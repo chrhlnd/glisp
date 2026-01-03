@@ -153,10 +153,23 @@ func FirstFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	case SexpPair:
 		return expr.head, nil
 	case SexpArray:
+		if len(expr) == 0 {
+			return SexpNull, nil
+		}
 		return expr[0], nil
+	case SexpStr:
+		if len(expr) == 0 {
+			return SexpNull, nil
+		}
+		return SexpChar(expr[0]), nil
+	case SexpData:
+		if len(expr) == 0 {
+			return SexpNull, nil
+		}
+		return SexpInt(expr[0]), nil
 	}
 
-	return SexpNull, WrongType
+	return SexpNull, fmt.Errorf("%v, invalid arg type %T", name, args[0])
 }
 
 func RestFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
@@ -169,13 +182,21 @@ func RestFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 		return expr.tail, nil
 	case SexpArray:
 		if len(expr) == 0 {
-			return expr, nil
-		}
-		return expr[1:], nil
-	case SexpSentinel:
-		if expr == SexpNull {
 			return SexpNull, nil
 		}
+		return expr[1:], nil
+	case SexpStr:
+		if len(expr) == 0 {
+			return SexpNull, nil
+		}
+		return SexpStr(string(expr)[1:]), nil
+	case SexpData:
+		if len(expr) == 0 {
+			return SexpNull, nil
+		}
+		return SexpData([]byte(expr)[1:]), nil
+	case SexpSentinel:
+		return SexpNull, nil
 	}
 
 	return SexpNull, WrongType
@@ -547,6 +568,8 @@ func TypeQueryFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 		result = IsZero(args[0])
 	case "empty?":
 		result = IsEmpty(args[0])
+	case "seq?":
+		result = IsList(args[0]) || IsPair(args[0]) || IsArray(args[0])
 	}
 
 	return SexpBool(result), nil
@@ -1044,6 +1067,7 @@ var BuiltinFunctions = map[string]GlispUserFunction{
 	"rest":          RestFunction,
 	"car":           FirstFunction,
 	"cdr":           RestFunction,
+	"seq?":          TypeQueryFunction,
 	"list?":         TypeQueryFunction,
 	"null?":         TypeQueryFunction,
 	"array?":        TypeQueryFunction,
