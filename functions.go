@@ -959,23 +959,23 @@ func ConstructorFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	return SexpNull, errors.New("invalid constructor")
 }
 
-var signalId int
-var signals map[int]chan Sexp = make(map[int]chan Sexp)
+var eventId int
+var events map[int]chan Sexp = make(map[int]chan Sexp)
 
-func SignalFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
+func EventFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	switch len(args) {
 	case 0:
-		signalId++
-		id := signalId
-		signals[id] = make(chan Sexp, 1)
+		eventId++
+		id := eventId
+		events[id] = make(chan Sexp, 1)
 		return SexpInt(id), nil
 	case 2:
 		id := int(args[0].(SexpInt))
-		signals[id] <- args[1]
-		close(signals[id])
+		events[id] <- args[1]
+		close(events[id])
 		return SexpNull, nil
 	}
-	return SexpNull, fmt.Errorf("%v, unknown signal nargs %v", name, len(args))
+	return SexpNull, fmt.Errorf("%v, unknown event nargs %v", name, len(args))
 }
 
 func WaitFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
@@ -986,9 +986,9 @@ func WaitFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	signal := int(args[0].(SexpInt))
 	delayMs := int(args[1].(SexpInt))
 
-	ch, ok := signals[signal]
+	ch, ok := events[signal]
 	if !ok {
-		return SexpNull, fmt.Errorf("%v, expected param1 to be a signal got %v", name, signal)
+		return SexpNull, fmt.Errorf("%v, expected param1 to be an event got %v", name, signal)
 	}
 
 	var ret Sexp
@@ -1000,7 +1000,7 @@ WAIT:
 		select {
 		case val := <-ch:
 			ret = val
-			delete(signals, signal)
+			delete(events, signal)
 			break WAIT
 		default:
 		}
@@ -1175,7 +1175,7 @@ var BuiltinFunctions = map[string]GlispUserFunction{
 	"ends-with":     MatchEndFunction,
 	"begins-with":   MatchEndFunction,
 	"wait":          WaitFunction,
-	"signal":        SignalFunction,
+	"event":         EventFunction,
 }
 
 // (ends-with <haystack> <needle>)
