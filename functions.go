@@ -541,6 +541,8 @@ func TypeQueryFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	var result bool
 
 	switch name {
+	case "event?":
+		_, result = args[0].(SexpEvent)
 	case "list?":
 		result = IsList(args[0])
 	case "pair?":
@@ -966,7 +968,7 @@ var events map[int]chan Sexp = make(map[int]chan Sexp)
 
 func EventFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	// in "try" mode if we have a null object do nothing
-	if strings.HasSuffix(name, "?") {
+	if strings.HasPrefix(name, "?") {
 		if _, ok := args[0].(SexpSentinel); ok {
 			return SexpNull, nil
 		} else {
@@ -997,7 +999,7 @@ func WaitFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	}
 
 	// if we're in try mode do nothing if we don't have a valid event
-	if strings.HasSuffix(name, "?") {
+	if strings.HasPrefix(name, "?") {
 		if _, ok := args[0].(SexpSentinel); ok {
 			return SexpNull, nil
 		}
@@ -1159,6 +1161,7 @@ var BuiltinFunctions = map[string]GlispUserFunction{
 	"data?":         TypeQueryFunction,
 	"bool?":         TypeQueryFunction,
 	"fn?":           TypeQueryFunction,
+	"event?":        TypeQueryFunction,
 	"println":       PrintFunction,
 	"print":         PrintFunction,
 	"plog":          LogFunction,
@@ -1196,9 +1199,9 @@ var BuiltinFunctions = map[string]GlispUserFunction{
 	"ends-with":     MatchEndFunction,
 	"begins-with":   MatchEndFunction,
 	"event":         EventFunction,
-	"event?":        EventFunction, // try do operation if event isn't nil
+	"?event":        EventFunction, // try do operation if event isn't nil
 	"wait":          WaitFunction,
-	"wait?":         WaitFunction, // only wait if we have a valid event otherwise do nothing
+	"?wait":         WaitFunction, // only wait if we have a valid event otherwise do nothing
 }
 
 // (ends-with <haystack> <needle>)
