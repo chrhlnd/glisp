@@ -87,6 +87,9 @@ func (env *Glisp) Clone() *Glisp {
 	dupenv.nextsymbol = env.nextsymbol
 	dupenv.before = env.before
 	dupenv.after = env.after
+	dupenv.queueLock = env.queueLock
+	dupenv.queued = env.queued
+	dupenv.queuedHas = env.queuedHas
 
 	dupenv.scopestack.Push(env.scopestack.elements[0])
 
@@ -109,6 +112,9 @@ func (env *Glisp) Duplicate() *Glisp {
 	dupenv.nextsymbol = env.nextsymbol
 	dupenv.before = env.before
 	dupenv.after = env.after
+	dupenv.queueLock = env.queueLock
+	dupenv.queued = env.queued
+	dupenv.queuedHas = env.queuedHas
 
 	dupenv.scopestack.Push(env.scopestack.elements[0])
 

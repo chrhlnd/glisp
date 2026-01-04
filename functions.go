@@ -571,6 +571,8 @@ func TypeQueryFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 		result = IsEmpty(args[0])
 	case "bool?":
 		_, result = args[0].(SexpBool)
+	case "fn?":
+		_, result = args[0].(SexpFunction)
 	case "seq?":
 		result = IsList(args[0]) || IsPair(args[0]) || IsArray(args[0])
 	}
@@ -963,14 +965,25 @@ var eventId int
 var events map[int]chan Sexp = make(map[int]chan Sexp)
 
 func EventFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
+	// in "try" mode if we have a null object do nothing
+	if strings.HasSuffix(name, "?") {
+		if _, ok := args[0].(SexpSentinel); ok {
+			return SexpNull, nil
+		} else {
+			if len(args) == 1 {
+				args = args[1:] // we were trying to call the constructor
+			}
+		}
+	}
+
 	switch len(args) {
 	case 0:
 		eventId++
 		id := eventId
 		events[id] = make(chan Sexp, 1)
-		return SexpInt(id), nil
+		return SexpEvent(id), nil
 	case 2:
-		id := int(args[0].(SexpInt))
+		id := int(args[0].(SexpEvent))
 		events[id] <- args[1]
 		close(events[id])
 		return SexpNull, nil
@@ -983,12 +996,19 @@ func WaitFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 		return SexpNull, WrongNargs
 	}
 
-	signal := int(args[0].(SexpInt))
+	// if we're in try mode do nothing if we don't have a valid event
+	if strings.HasSuffix(name, "?") {
+		if _, ok := args[0].(SexpSentinel); ok {
+			return SexpNull, nil
+		}
+	}
+
+	event := int(args[0].(SexpEvent))
 	delayMs := int(args[1].(SexpInt))
 
-	ch, ok := events[signal]
+	ch, ok := events[event]
 	if !ok {
-		return SexpNull, fmt.Errorf("%v, expected param1 to be an event got %v", name, signal)
+		return SexpNull, fmt.Errorf("%v, expected param1 to be an event got %v", name, args[0])
 	}
 
 	var ret Sexp
@@ -1000,7 +1020,7 @@ WAIT:
 		select {
 		case val := <-ch:
 			ret = val
-			delete(events, signal)
+			delete(events, event)
 			break WAIT
 		default:
 		}
@@ -1138,6 +1158,7 @@ var BuiltinFunctions = map[string]GlispUserFunction{
 	"pair?":         TypeQueryFunction,
 	"data?":         TypeQueryFunction,
 	"bool?":         TypeQueryFunction,
+	"fn?":           TypeQueryFunction,
 	"println":       PrintFunction,
 	"print":         PrintFunction,
 	"plog":          LogFunction,
@@ -1174,8 +1195,10 @@ var BuiltinFunctions = map[string]GlispUserFunction{
 	"cvert-float64": ConvertFunction,
 	"ends-with":     MatchEndFunction,
 	"begins-with":   MatchEndFunction,
-	"wait":          WaitFunction,
 	"event":         EventFunction,
+	"event?":        EventFunction, // try do operation if event isn't nil
+	"wait":          WaitFunction,
+	"wait?":         WaitFunction, // only wait if we have a valid event otherwise do nothing
 }
 
 // (ends-with <haystack> <needle>)
@@ -1226,7 +1249,7 @@ func ConvertFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 					buffer.WriteString(string([]byte(t)))
 					break
 				default:
-					buffer.WriteString(arg.SexpString())
+					buffer.WriteString(fmt.Sprint(arg))
 				}
 			}
 			return SexpStr(buffer.String()), nil

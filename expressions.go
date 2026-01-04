@@ -2,6 +2,7 @@ package glisp
 
 import (
 	"bytes"
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
@@ -88,6 +89,7 @@ type SexpFloat float64
 type SexpChar rune
 type SexpStr string
 type SexpData []byte
+type SexpEvent int
 
 var SexpIntSize = reflect.TypeOf(SexpInt(0)).Bits()
 var SexpFloatSize = reflect.TypeOf(SexpFloat(0.0)).Bits()
@@ -117,6 +119,10 @@ func (hash SexpHash) SexpString() string {
 		return str[:len(str)-1] + "}"
 	}
 	return str + "}"
+}
+
+func (b SexpEvent) SexpString() string {
+	return fmt.Sprint("(event ", int(b), ")")
 }
 
 func (b SexpBool) SexpString() string {
