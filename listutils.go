@@ -31,39 +31,28 @@ func MakeList(expressions []Sexp) Sexp {
 	return Cons(expressions[0], MakeList(expressions[1:]))
 }
 
-func AppendList(expList Sexp, adds []Sexp) Sexp {
-	if !IsList(expList) {
-		log.Fatalf("AppendList must be called with a SexpPair type, given %v(%T)", expList, expList)
+func AppendList(list Sexp, adds []Sexp) Sexp {
+	if !IsList(list) {
+		log.Fatalf("AppendList must be called with a SexpPair type, given %v(%T)", list, list)
 	}
 
-	inList := expList.(SexpPair)
+	count := 0
 
-	findLast := func(list *SexpPair) *SexpPair {
-		for {
-			if list.tail == SexpNull {
-				break
-			}
-
-			if !IsList(list.tail) {
-				log.Fatalf("AppendList, List must be composed of lists failed at %v(%T)", list.tail, list.tail)
-			}
-
-			if v, ok := list.tail.(SexpPair); ok {
-				list = &v
-			}
-		}
-
-		return list
+	for cur := list; cur != SexpNull; cur = cur.(SexpPair).Tail() {
+		count++
 	}
 
-	aList := findLast(&inList)
+	cargs := make([]Sexp, 0, count + len(adds))
 
-	for _, add := range adds {
-		aList.tail = Cons(add, SexpNull)
-		aList = findLast(aList)
+	for cur := list; cur != SexpNull; cur = cur.(SexpPair).Tail() {
+		cargs = append(cargs, cur.(SexpPair).Head())
 	}
 
-	return inList
+	cargs = append(cargs, adds...)
+
+	ret := MakeList(cargs)
+
+	return ret
 }
 
 func FoldrPair(env *Glisp, fun SexpFunction, expr Sexp, acc Sexp) (Sexp, error) {
