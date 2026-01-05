@@ -60,7 +60,7 @@ func ConcatArray(arr SexpArray, expr Sexp) (SexpArray, error) {
 	case SexpSentinel:
 		return arr, nil
 	default:
-		return arr, fmt.Errorf("concat, second argument is not an array; got %T", expr)
+		return arr, fmt.Errorf("concat, second argument is not an array; got %T %v", expr, expr)
 	}
 
 	return append(arr, arr2...), nil

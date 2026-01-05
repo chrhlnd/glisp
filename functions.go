@@ -445,11 +445,41 @@ func AppendFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 		return t, nil
 	case SexpData:
 		return MakeDataFunction(env, name, args)
-	case SexpPair, SexpSentinel:
-		return AppendList(t, args[1:]), nil
+	case SexpSentinel:
+		makeList := args[1:]
+
+		if coalesce {
+			var makeable []Sexp = make([]Sexp, 0, len(args[1:]))
+			for _, arg := range args[1:] {
+				if !IsEmpty(arg) {
+					makeable = append(makeable, arg)
+				}
+			}
+			makeList = makeable
+		}
+
+		if len(makeList) == 0 {
+			return SexpNull, nil
+		}
+
+		return MakeList(makeList), nil
+	case SexpPair:
+		appendList := args[1:]
+
+		if coalesce {
+			appendable := make([]Sexp, 0, len(appendList))
+			for _, arg := range args[1:] {
+				if !IsEmpty(arg) {
+					appendable = append(appendable, arg)
+				}
+			}
+			appendList = appendable
+		}
+
+		return AppendList(t, appendList), nil
 	}
 
-	return SexpNull, fmt.Errorf("%v, expected first arg to be (array|string|data|list) got %T", name, args[0])
+	return SexpNull, fmt.Errorf("%v, expected first arg to be (array|string|data|list) got %T %v", name, args[0], args[0])
 }
 
 func ConcatFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
@@ -458,6 +488,13 @@ func ConcatFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	}
 
 	coalesce := name[0] == '?'
+
+	if args[0] == SexpNull {
+		args = args[1:]
+		if _, ok := args[0].(SexpPair); !ok {
+			return SexpNull, fmt.Errorf("%v, expected list type for skipped arg 1 got %T", name, args[0])
+		}
+	}
 
 	var err error
 
@@ -469,7 +506,7 @@ func ConcatFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 			}
 			t, err = ConcatArray(t, arg)
 			if err != nil {
-				return nil, err
+				return SexpNull, err
 			}
 		}
 		return t, nil
@@ -480,7 +517,7 @@ func ConcatFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 			}
 			t, err = ConcatStr(t, arg)
 			if err != nil {
-				return nil, err
+				return SexpNull, err
 			}
 		}
 		return t, nil
@@ -492,7 +529,7 @@ func ConcatFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 			}
 			ot, err = ConcatList(t, arg)
 			if err != nil {
-				return nil, err
+				return SexpNull, err
 			}
 			t = ot.(SexpPair)
 		}
@@ -828,7 +865,7 @@ func FoldLFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 		return FoldlData(env, fun, e, acc, chunkSz)
 	}
 
-	return SexpNull, fmt.Errorf("first argument must be pair, array, list, hash, or data, had type `%T` val %v", args[1], args[1])
+	return SexpNull, fmt.Errorf("first argument must be pair, array, list, hash, or data, had type `%T` val %v", args[0], args[0])
 }
 
 func MapFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {

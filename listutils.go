@@ -2,6 +2,8 @@ package glisp
 
 import (
 	"errors"
+	"fmt"
+	"log"
 )
 
 var NotAList = errors.New("not a list")
@@ -29,28 +31,39 @@ func MakeList(expressions []Sexp) Sexp {
 	return Cons(expressions[0], MakeList(expressions[1:]))
 }
 
-func AppendList(list Sexp, adds []Sexp) Sexp {
-	var lastPair SexpPair
+func AppendList(expList Sexp, adds []Sexp) Sexp {
+	if !IsList(expList) {
+		log.Fatalf("AppendList must be called with a SexpPair type, given %v(%T)", expList, expList)
+	}
 
-	cur := list
+	inList := expList.(SexpPair)
 
-	for {
-		switch pair := cur.(type) {
-		case SexpPair:
-			lastPair = pair
-			cur = pair.tail
-		default:
-			for _, add := range adds {
-				if lastPair.head == nil {
-					lastPair = Cons(add, SexpNull)
-				} else {
-					lastPair = Cons(lastPair, add)
-				}
+	findLast := func(list *SexpPair) *SexpPair {
+		for {
+			if list.tail == SexpNull {
+				break
 			}
 
-			return lastPair
+			if !IsList(list.tail) {
+				log.Fatalf("AppendList, List must be composed of lists failed at %v(%T)", list.tail, list.tail)
+			}
+
+			if v, ok := list.tail.(SexpPair); ok {
+				list = &v
+			}
 		}
+
+		return list
 	}
+
+	aList := findLast(&inList)
+
+	for _, add := range adds {
+		aList.tail = Cons(add, SexpNull)
+		aList = findLast(aList)
+	}
+
+	return inList
 }
 
 func FoldrPair(env *Glisp, fun SexpFunction, expr Sexp, acc Sexp) (Sexp, error) {
@@ -149,7 +162,7 @@ func WalkList(expr Sexp, visit func(Sexp)) {
 
 func ConcatList(a SexpPair, b Sexp) (Sexp, error) {
 	if !IsList(b) {
-		return SexpNull, NotAList
+		return SexpNull, fmt.Errorf("ConcatList, second argument wasn't a list it was %T, %v", b, b.SexpString())
 	}
 
 	if a.tail == SexpNull {
@@ -165,5 +178,5 @@ func ConcatList(a SexpPair, b Sexp) (Sexp, error) {
 		return Cons(a.head, newtail), nil
 	}
 
-	return SexpNull, NotAList
+	return SexpNull, fmt.Errorf("ConcatList, first argument pair wasn't a list tail was %T", a.tail)
 }

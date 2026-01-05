@@ -6,6 +6,7 @@ import (
 	"os"
 	"errors"
 	"path/filepath"
+	"strings"
 	"io/ioutil"
 	"io"
 )
@@ -659,6 +660,48 @@ func pathRel(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, erro
 	return glisp.SexpStr(ret), nil
 }
 
+func createTempFile(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
+	if len(args) != 2 {
+		return glisp.SexpNull, glisp.WrongNargs
+	}
+
+	pat := string(args[0].(glisp.SexpStr))
+
+	var f *os.File
+	var err error
+	if strings.Contains(pat, "*") {
+		f, err = os.CreateTemp("", pat)
+	} else {
+		f, err = os.Create(filepath.Join(os.TempDir(), pat))
+	}
+
+	if err != nil {
+		return glisp.SexpNull, err
+	}
+
+	var data []byte
+	switch t := args[1].(type) {
+	case glisp.SexpStr:
+		data = []byte(t)
+	case glisp.SexpData:
+		data = t
+	default:
+		data = []byte(t.SexpString())
+	}
+
+	_, err = f.Write(data)
+	if err != nil {
+		f.Close()
+		return glisp.SexpNull, err
+	}
+
+	fname := f.Name()
+
+	f.Close()
+
+	return glisp.SexpStr(fname), nil
+}
+
 func ImportFileSys(env *glisp.Glisp) {
 	env.AddFunction("fs-cwd", currentDir)
 	env.AddFunction("fs-chdir", changeDir)
@@ -678,4 +721,5 @@ func ImportFileSys(env *glisp.Glisp) {
 	env.AddFunction("fs-read-file-s", readStreamFile)
 	env.AddFunction("fs-remove-file", removeFile)
 	env.AddFunction("fs-append-file-s", appendStreamFile)
+	env.AddFunction("fs-create-temp-file", createTempFile)
 }

@@ -180,7 +180,7 @@ func execSpawnOnStdOut(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 				log.Fatal(err)
 			}
 
-			if !glisp.IsTruthy(res) {
+			if _, ok := res.(glisp.SexpBool); ok && bool(res.(glisp.SexpBool)) {
 				s_watchers.RemWatcher(spawnId, fnId)
 			}
 		})
@@ -215,7 +215,7 @@ func execSpawnOnStdErr(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 				log.Fatal(err)
 			}
 
-			if !glisp.IsTruthy(res) {
+			if _, ok := res.(glisp.SexpBool); ok && bool(res.(glisp.SexpBool)) {
 				s_watchers.RemWatcher(spawnId, fnId)
 			}
 		})

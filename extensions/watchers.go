@@ -95,6 +95,8 @@ func (p *ReadWatcher) run(onTerm func()) {
 		}
 		lock.Unlock()
 
+		//log.Print("Closing watchers len is (", len(callers), ")")
+
 		for k, v := range callers {
 			v(k, empty[:])
 		}

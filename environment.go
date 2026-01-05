@@ -182,8 +182,8 @@ func (env *Glisp) CallFunction(function SexpFunction, nargs int) error {
 		}
 	} else if nargs != function.nargs {
 		return errors.New(
-			fmt.Sprintf("%s expected %d arguments, got %d",
-				function.name, function.nargs, nargs))
+			fmt.Sprintf("%s expected %d arguments, got %d hmm(%v)",
+				function.name, function.nargs, nargs, StrFunction(function.fun)))
 	}
 
 	if env.scopestack.IsEmpty() {
@@ -419,6 +419,16 @@ func (env *Glisp) DumpFunctionByName(name string) error {
 	}
 	DumpFunction(fun)
 	return nil
+}
+
+func StrFunction(fun GlispFunction) string {
+	var buf bytes.Buffer
+	for _, instr := range fun {
+		buf.WriteString("\t")
+		buf.WriteString(instr.InstrString())
+		buf.WriteString("\n")
+	}
+	return buf.String()
 }
 
 func DumpFunction(fun GlispFunction) {
