@@ -42,7 +42,7 @@ func AppendList(list Sexp, adds []Sexp) Sexp {
 		count++
 	}
 
-	cargs := make([]Sexp, 0, count + len(adds))
+	cargs := make([]Sexp, 0, count+len(adds))
 
 	for cur := list; cur != SexpNull; cur = cur.(SexpPair).Tail() {
 		cargs = append(cargs, cur.(SexpPair).Head())
