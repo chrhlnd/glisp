@@ -174,8 +174,10 @@ func execSpawnOnStdOut(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 	}
 
 	s_watchers.AddWatcher(spawnId, in, func (fnId int, data []byte) {
+		data1 := make([]byte, len(data))
+		copy(data1, data)
 		env.QueueRun(func() {
-			res, err := env.Apply(fn, []glisp.Sexp{glisp.SexpData(data)})
+			res, err := env.Apply(fn, []glisp.Sexp{glisp.SexpData(data1)})
 			if err != nil {
 				log.Fatal(err)
 			}
