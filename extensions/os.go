@@ -173,7 +173,9 @@ func execSpawnOnStdOut(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 		return glisp.SexpNull, err
 	}
 
-	s_watchers.AddWatcher(spawnId, in, func (fnId int, data []byte) {
+	watcherId := spawnId * 2
+
+	s_watchers.AddWatcher(watcherId, in, func (fnId int, data []byte) {
 		data1 := make([]byte, len(data))
 		copy(data1, data)
 		env.QueueRun(func() {
@@ -183,7 +185,7 @@ func execSpawnOnStdOut(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 			}
 
 			if _, ok := res.(glisp.SexpBool); ok && bool(res.(glisp.SexpBool)) {
-				s_watchers.RemWatcher(spawnId, fnId)
+				s_watchers.RemWatcher(watcherId, fnId)
 			}
 		})
 	})
@@ -210,7 +212,9 @@ func execSpawnOnStdErr(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 		return glisp.SexpNull, err
 	}
 
-	s_watchers.AddWatcher(spawnId, in, func (fnId int, data []byte) {
+	watcherId := spawnId * 2 + 1
+
+	s_watchers.AddWatcher(watcherId, in, func (fnId int, data []byte) {
 		data1 := make([]byte, len(data))
 		copy(data1, data)
 		env.QueueRun(func() {
@@ -220,7 +224,7 @@ func execSpawnOnStdErr(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 			}
 
 			if _, ok := res.(glisp.SexpBool); ok && bool(res.(glisp.SexpBool)) {
-				s_watchers.RemWatcher(spawnId, fnId)
+				s_watchers.RemWatcher(watcherId, fnId)
 			}
 		})
 	})

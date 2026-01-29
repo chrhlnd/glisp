@@ -395,7 +395,7 @@ func appendStreamFile(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.S
 
 		data, ok := fnRet.(glisp.SexpData)
 		if !ok {
-			return nil, fmt.Errorf("stream funciton return something other then `data` aborting")
+			return nil, fmt.Errorf("stream function return something other then `data` aborting")
 		}
 
 		if len([]byte(data)) == 0 {
@@ -474,6 +474,26 @@ func removeFile(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, e
 		}
 	}
 	return glisp.SexpNull, nil
+}
+
+func truncFile(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
+	ret := make([]glisp.Sexp, len(args))
+
+	for i, arg := range args {
+		file, ok := arg.(glisp.SexpStr)
+		if !ok {
+			return glisp.SexpNull, fmt.Errorf("invalid arg(%v) %T passed, expected string", i, arg)
+		}
+
+		err := os.Truncate(string(file), 0)
+		if err != nil {
+			ret[i] = glisp.SexpBool(false)
+		} else {
+			ret[i] = glisp.SexpBool(true)
+		}
+	}
+
+	return glisp.SexpArray(ret), nil
 }
 
 func fileExists(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
@@ -719,7 +739,9 @@ func ImportFileSys(env *glisp.Glisp) {
 	env.AddFunction("fs-file-info", fileInfo)
 	env.AddFunction("fs-read-file", readFile)
 	env.AddFunction("fs-read-file-s", readStreamFile)
+	env.AddFunction("fs-trunc-file", truncFile)
 	env.AddFunction("fs-remove-file", removeFile)
+	env.AddFunction("fs-append-file", appendFile)
 	env.AddFunction("fs-append-file-s", appendStreamFile)
 	env.AddFunction("fs-create-temp-file", createTempFile)
 }
