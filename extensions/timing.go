@@ -13,13 +13,27 @@ func (t SexpTime) SexpString() string {
 	return time.Time(t).String()
 }
 
-func TimeFunction(env *glisp.Glisp, name string,
-	args []glisp.Sexp) (glisp.Sexp, error) {
+func TimeFunction(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
 	return SexpTime(time.Now()), nil
 }
 
-func TimeitFunction(env *glisp.Glisp, name string,
-	args []glisp.Sexp) (glisp.Sexp, error) {
+func TimeFormatFunction(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
+	if len(args) < 1 {
+		return glisp.SexpNull, glisp.WrongNargs
+	}
+
+	t := time.Time(args[0].(SexpTime))
+
+	fmt := time.DateTime
+
+	if len(args) > 1 {
+		fmt = string(args[1].(glisp.SexpStr))
+	}
+
+	return glisp.SexpStr(t.Format(fmt)), nil
+}
+
+func TimeitFunction(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
 	if len(args) != 1 {
 		return glisp.SexpNull, glisp.WrongNargs
 	}
@@ -59,5 +73,6 @@ func TimeitFunction(env *glisp.Glisp, name string,
 
 func ImportTime(env *glisp.Glisp) {
 	env.AddFunction("time", TimeFunction)
+	env.AddFunction("time-format", TimeFormatFunction)
 	env.AddFunction("timeit", TimeitFunction)
 }
