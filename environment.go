@@ -72,6 +72,7 @@ type Glisp struct {
 	queuedDrain bool
 	queuedHas   *atomic.Bool
 	waiters     *waiting
+	imports     map[string]struct{}
 }
 
 const CallStackSize = 25
@@ -107,6 +108,7 @@ func NewGlisp() *Glisp {
 	env.curfunc = env.mainfunc
 	env.pc = 0
 	env.waiters = newWaiting()
+	env.imports = make(map[string]struct{})
 	return env
 }
 
@@ -135,6 +137,7 @@ func (env *Glisp) Clone() *Glisp {
 	dupenv.curfunc = dupenv.mainfunc
 	dupenv.pc = 0
 	dupenv.waiters = env.waiters
+	dupenv.imports = env.imports
 	return dupenv
 }
 
@@ -161,6 +164,7 @@ func (env *Glisp) Duplicate() *Glisp {
 	dupenv.curfunc = dupenv.mainfunc
 	dupenv.pc = 0
 	dupenv.waiters = env.waiters
+	dupenv.imports = env.imports
 	return dupenv
 }
 
@@ -622,8 +626,15 @@ func (env *Glisp) Run() (Sexp, error) {
 		}
 	}
 
+	for env.CallQueued() {
+		// do this till we're drained
+	}
+
 	for env.waiters.Count() > 0 {
-		env.CallQueued()
+		for env.CallQueued() {
+			// do this till we're drained
+		}
+		//env.CallQueued()
 		exp1, waitMore := env.waiters.WaitOnce()
 		if !waitMore {
 			exp = exp1

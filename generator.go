@@ -3,6 +3,7 @@ package glisp
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 )
 
 type Generator struct {
@@ -423,6 +424,30 @@ func (gen *Generator) GenerateAssert(args []Sexp) error {
 	return nil
 }
 
+func (gen *Generator) GenerateImport(args []Sexp) error {
+	if len(args) < 1 {
+		return WrongNargs
+	}
+
+	var name SexpStr
+	var ok bool
+
+	if name, ok = args[0].(SexpStr); !ok {
+		return fmt.Errorf("Import expected filename")
+	}
+
+	iname := filepath.Base(string(name))
+
+	if _, ok := gen.env.imports[iname]; ok {
+		// already imported
+		return nil
+	}
+
+	gen.env.imports[iname] = struct{}{}
+
+	return gen.GenerateInclude(args)
+}
+
 func (gen *Generator) GenerateInclude(args []Sexp) error {
 	if len(args) < 1 {
 		return WrongNargs
@@ -510,6 +535,8 @@ func (gen *Generator) GenerateCallBySymbol(sym SexpSymbol, args []Sexp) error {
 		return gen.GenerateSyntaxQuote(args)
 	case "include":
 		return gen.GenerateInclude(args)
+	case "import":
+		return gen.GenerateImport(args)
 	}
 
 	macro, found := gen.env.macros[sym.number]

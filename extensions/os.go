@@ -205,7 +205,8 @@ func (b *BufferRunner) AddData(env *glisp.Glisp, id int, data []byte) {
 	if b.runner == nil {
 		b.runner = func() {
 			b.lock.Lock()
-			batch := b.buf.Bytes()
+			batch := make([]byte, b.buf.Len())
+			copy(batch, b.buf.Bytes())
 			b.buf.Reset()
 			b.runner = nil
 			b.lock.Unlock()
