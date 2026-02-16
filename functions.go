@@ -1070,6 +1070,18 @@ WAIT:
 	return ret, nil
 }
 
+func SleepFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
+	if len(args) != 1 {
+		return SexpNull, WrongNargs
+	}
+
+	ms := int(args[0].(SexpInt))
+
+	time.Sleep(time.Duration(ms) * time.Millisecond)
+
+	return args[0], nil
+}
+
 func SymnumFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 	if len(args) != 1 {
 		return SexpNull, WrongNargs
@@ -1239,6 +1251,7 @@ var BuiltinFunctions = map[string]GlispUserFunction{
 	"?event":        EventFunction, // try do operation if event isn't nil
 	"wait":          WaitFunction,
 	"?wait":         WaitFunction, // only wait if we have a valid event otherwise do nothing
+	"sleep":         SleepFunction,
 }
 
 // (ends-with <haystack> <needle>)

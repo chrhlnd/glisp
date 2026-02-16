@@ -18,31 +18,38 @@ type PostHook func(*Glisp, string, Sexp)
 type QueueRun func()
 
 type waiting struct {
-	list   map[int]func() bool
-	nextId int
+	list    map[int]func() (Sexp, bool)
+	nextId  int
+	waitExp Sexp
 }
 
 func newWaiting() *waiting {
-	return &waiting{make(map[int]func() bool), 0}
+	return &waiting{make(map[int]func() (Sexp, bool)), 0, SexpNull}
 }
 
-func (w *waiting) Add(fn func() bool) {
+func (w *waiting) Add(fn func() (Sexp, bool)) {
 	w.list[w.nextId] = fn
 	w.nextId++
 }
 
-func (w *waiting) WaitOnce() bool {
+func (w *waiting) Count() int {
+	return len(w.list)
+}
+
+func (w *waiting) WaitOnce() (Sexp, bool) {
 	if len(w.list) == 0 {
-		return false
+		return w.waitExp, false
 	}
 
 	for k, v := range w.list {
-		if !v() {
+		exp, wait := v()
+		if !wait {
+			w.waitExp = exp
 			delete(w.list, k)
 		}
 	}
 
-	return len(w.list) > 0
+	return SexpNull, len(w.list) > 0
 }
 
 type Glisp struct {
@@ -563,7 +570,7 @@ func (env *Glisp) Finish() (Sexp, error) {
 	return env.datastack.PopExpr()
 }
 
-func (env *Glisp) RegisterWaitFn(fn func() bool) {
+func (env *Glisp) RegisterWaitFn(fn func() (Sexp, bool)) {
 	env.waiters.Add(fn)
 }
 
@@ -584,9 +591,9 @@ func (env *Glisp) Step() (Sexp, error) {
 	return nil, nil
 }
 
-func (env *Glisp) CallQueued() error {
+func (env *Glisp) CallQueued() bool {
 	if env.queuedDrain || !env.queuedHas.Load() {
-		return nil
+		return false
 	}
 
 	env.queueLock.Lock()
@@ -601,7 +608,7 @@ func (env *Glisp) CallQueued() error {
 		call()
 	}
 	env.queuedDrain = false
-	return nil
+	return true
 }
 
 func (env *Glisp) Run() (Sexp, error) {
@@ -615,11 +622,18 @@ func (env *Glisp) Run() (Sexp, error) {
 		}
 	}
 
-	env.CallQueued()
-
-	for env.waiters.WaitOnce() {
+	for env.waiters.Count() > 0 {
 		env.CallQueued()
+		exp1, waitMore := env.waiters.WaitOnce()
+		if !waitMore {
+			exp = exp1
+			break
+		}
 		time.Sleep(time.Millisecond)
+	}
+
+	for env.CallQueued() {
+		// do this till we're drained
 	}
 
 	return exp, err

@@ -134,18 +134,31 @@ func execSpawnWait(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp
 	if !ok {
 		return glisp.SexpNull, fmt.Errorf("invalid spawnid %v", spawnId)
 	}
+	select {
+	case <-v.done:
+		v.closed = true
+	default:
+	}
 
-	env.RegisterWaitFn(func()bool {
-		select {
-		case <-v.done:
-			v.closed = true
-			delete(s_spawns, spawnId)
-		default:
-		}
-		return !v.closed
-	})
+	if !v.closed {
+		env.RegisterWaitFn(func()(glisp.Sexp, bool) {
+			select {
+			case <-v.done:
+				v.closed = true
+				delete(s_spawns, spawnId)
+				return glisp.SexpInt(v.cmd.ProcessState.ExitCode()), false
+			default:
+			}
+			return glisp.SexpNull, true
+		})
+	}
 
-	return args[0], nil
+	if v.closed {
+		delete(s_spawns, spawnId)
+		return glisp.SexpInt(v.cmd.ProcessState.ExitCode()), nil
+	}
+
+	return glisp.SexpNull, nil
 }
 
 func execSpawnIsAlive(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
@@ -163,7 +176,6 @@ func execSpawnIsAlive(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.S
 	select {
 	case <-v.done:
 		v.closed = true
-		delete(s_spawns, spawnId)
 	default:
 	}
 
@@ -277,32 +289,6 @@ func execSpawnOnStdErr(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 	s_watchers.AddWatcher(watcherId, in, func (fnId int, data []byte) {
 		runner.AddData(env, fnId, data)
 	})
-
-	/*
-	s_watchers.AddWatcher(watcherId, in, func (fnId int, data []byte) {
-		data1 := make([]byte, len(data))
-		copy(data1, data)
-		env.QueueRun(func() {
-			res, err := env.Apply(fn, []glisp.Sexp{glisp.SexpData(data1)})
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			if val, ok := res.(glisp.SexpBool); (ok && bool(val)) || len(data1) == 0 {
-				s_watchers.RemWatcher(watcherId, fnId)
-			}
-
-			if !env.DataStackEmpty() {
-				env.DumpEnvironment()
-				panic("stderr: Watcher error")
-			}
-
-			if !env.IsDone() {
-				panic("Not done")
-			}
-		})
-	})
-	*/
 
 	return args[0], err
 }
