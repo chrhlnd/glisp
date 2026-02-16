@@ -140,7 +140,7 @@ func (p *ReadWatcher) run(onTerm func()) {
 
 	go func() {
 		go func () {
-			var data [256]byte
+			var data [2048]byte
 			for {
 				n, err := p.dataIn.Read(data[:])
 				if err != nil {

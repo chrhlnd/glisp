@@ -2,11 +2,13 @@ package glispext
 
 import (
 	"github.com/chrhlnd/glisp"
-	"github.com/mitchellh/go-ps"
+//	"github.com/mitchellh/go-ps"
 	"os/exec"
 	"os"
 	"fmt"
 	"log"
+	"sync"
+	"bytes"
 )
 
 func parseCmdArgs(arg glisp.Sexp) ([]string, error) {
@@ -53,19 +55,26 @@ func parseCmdArgs(arg glisp.Sexp) ([]string, error) {
 }
 
 var s_spawn_counter int = 0
-var s_spawns map[int]*exec.Cmd = make(map[int]*exec.Cmd)
+
+type sSpawn struct {
+	cmd *exec.Cmd
+	done chan struct{}
+	closed bool
+}
+
+var s_spawns map[int]sSpawn = make(map[int]sSpawn)
 
 func SpawnWaitAll() []error {
 	var errs []error
 
 	for _, v := range s_spawns {
-		err := v.Wait()
+		err := v.cmd.Wait()
 		if err != nil {
 			errs = append(errs, err)
 		}
 	}
 
-	s_spawns = make(map[int]*exec.Cmd)
+	s_spawns = make(map[int]sSpawn)
 
 	return errs
 }
@@ -74,15 +83,15 @@ func SpawnKillAll() []error {
 	var errs []error
 
 	for _, v := range s_spawns {
-		if v.Process != nil {
-			err := v.Process.Kill()
+		if v.cmd.Process != nil {
+			err := v.cmd.Process.Kill()
 			if err != nil {
 				errs = append(errs, err)
 			}
 		}
 	}
 
-	s_spawns = make(map[int]*exec.Cmd)
+	s_spawns = make(map[int]sSpawn)
 
 	return errs
 }
@@ -99,19 +108,19 @@ func execSpawnKill(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp
 		return glisp.SexpNull, fmt.Errorf("invalid spawnid %v", spawnId)
 	}
 
-	if v.Process == nil {
+	if v.cmd.Process == nil {
 		return glisp.SexpNull, nil
 	}
 
-	if v.ProcessState == nil || !v.ProcessState.Exited() {
-		v.Process.Kill()
+	if v.cmd.ProcessState == nil || !v.cmd.ProcessState.Exited() {
+		v.cmd.Process.Kill()
 	}
 
-	v.Wait()
+	v.cmd.Wait()
 
 	delete(s_spawns, spawnId)
 
-	return glisp.SexpInt(v.ProcessState.ExitCode()), nil
+	return glisp.SexpInt(v.cmd.ProcessState.ExitCode()), nil
 }
 
 func execSpawnWait(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
@@ -126,11 +135,17 @@ func execSpawnWait(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp
 		return glisp.SexpNull, fmt.Errorf("invalid spawnid %v", spawnId)
 	}
 
-	v.Wait()
+	env.RegisterWaitFn(func()bool {
+		select {
+		case <-v.done:
+			v.closed = true
+			delete(s_spawns, spawnId)
+		default:
+		}
+		return !v.closed
+	})
 
-	delete(s_spawns, spawnId)
-
-	return glisp.SexpInt(v.ProcessState.ExitCode()), nil
+	return args[0], nil
 }
 
 func execSpawnIsAlive(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
@@ -145,14 +160,49 @@ func execSpawnIsAlive(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.S
 		return glisp.SexpBool(ok), nil
 	}
 
-	p, err := ps.FindProcess(v.Process.Pid)
+	select {
+	case <-v.done:
+		v.closed = true
+		delete(s_spawns, spawnId)
+	default:
+	}
 
-	ret := p != nil && err == nil
-
-	return glisp.SexpBool(ret), nil
+	return glisp.SexpBool(!v.closed), nil
 }
 
 var s_watchers *ReadWatcherCollection = NewReadWatcherCollection()
+
+
+type BufferRunner struct {
+	buf *bytes.Buffer
+	lock *sync.Mutex
+	deliver func(int, []byte)
+	runner func()
+}
+
+func newBufRunner(deliver func(int, []byte)) *BufferRunner {
+	return &BufferRunner{&bytes.Buffer{},
+		&sync.Mutex{},
+		deliver,
+		nil}
+}
+
+func (b *BufferRunner) AddData(env *glisp.Glisp, id int, data []byte) {
+	b.lock.Lock()
+	b.buf.Write(data)
+	if b.runner == nil {
+		b.runner = func() {
+			b.lock.Lock()
+			batch := b.buf.Bytes()
+			b.buf.Reset()
+			b.runner = nil
+			b.lock.Unlock()
+			b.deliver(id, batch)
+		}
+		env.QueueRun(b.runner)
+	}
+	b.lock.Unlock()
+}
 
 func execSpawnOnStdOut(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
 	if len(args) != 2 {
@@ -167,27 +217,26 @@ func execSpawnOnStdOut(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 	}
 
 	fn := args[1].(glisp.SexpFunction)
-
-	in, err := v.StdoutPipe()
+	in, err := v.cmd.StdoutPipe()
 	if err != nil {
 		return glisp.SexpNull, err
 	}
 
 	watcherId := spawnId * 2
 
-	s_watchers.AddWatcher(watcherId, in, func (fnId int, data []byte) {
-		data1 := make([]byte, len(data))
-		copy(data1, data)
-		env.QueueRun(func() {
-			res, err := env.Apply(fn, []glisp.Sexp{glisp.SexpData(data1)})
-			if err != nil {
-				log.Fatal(err)
-			}
+	runner := newBufRunner(func (id int, batch []byte) {
+		res, err := env.Apply(fn, []glisp.Sexp{glisp.SexpData(batch)})
+		if err != nil {
+			log.Fatal(err)
+		}
 
-			if _, ok := res.(glisp.SexpBool); ok && bool(res.(glisp.SexpBool)) {
-				s_watchers.RemWatcher(watcherId, fnId)
-			}
-		})
+		if val, ok := res.(glisp.SexpBool); (ok && bool(val)) || len(batch) == 0 {
+			s_watchers.RemWatcher(watcherId, id)
+		}
+	})
+
+	s_watchers.AddWatcher(watcherId, in, func (fnId int, data []byte) {
+		runner.AddData(env, fnId, data)
 	})
 
 	return args[0], err
@@ -207,13 +256,29 @@ func execSpawnOnStdErr(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 
 	fn := args[1].(glisp.SexpFunction)
 
-	in, err := v.StderrPipe()
+	in, err := v.cmd.StderrPipe()
 	if err != nil {
 		return glisp.SexpNull, err
 	}
 
 	watcherId := spawnId * 2 + 1
 
+	runner := newBufRunner(func (id int, batch []byte) {
+		res, err := env.Apply(fn, []glisp.Sexp{glisp.SexpData(batch)})
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if val, ok := res.(glisp.SexpBool); (ok && bool(val)) || len(batch) == 0 {
+			s_watchers.RemWatcher(watcherId, id)
+		}
+	})
+
+	s_watchers.AddWatcher(watcherId, in, func (fnId int, data []byte) {
+		runner.AddData(env, fnId, data)
+	})
+
+	/*
 	s_watchers.AddWatcher(watcherId, in, func (fnId int, data []byte) {
 		data1 := make([]byte, len(data))
 		copy(data1, data)
@@ -223,11 +288,21 @@ func execSpawnOnStdErr(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 				log.Fatal(err)
 			}
 
-			if _, ok := res.(glisp.SexpBool); ok && bool(res.(glisp.SexpBool)) {
+			if val, ok := res.(glisp.SexpBool); (ok && bool(val)) || len(data1) == 0 {
 				s_watchers.RemWatcher(watcherId, fnId)
+			}
+
+			if !env.DataStackEmpty() {
+				env.DumpEnvironment()
+				panic("stderr: Watcher error")
+			}
+
+			if !env.IsDone() {
+				panic("Not done")
 			}
 		})
 	})
+	*/
 
 	return args[0], err
 }
@@ -239,15 +314,19 @@ func execSpawnStart(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sex
 
 	id := int(args[0].(glisp.SexpInt))
 
-	cmd, ok := s_spawns[id]
+	v, ok := s_spawns[id]
 	if !ok {
 		return glisp.SexpNull, fmt.Errorf("%v, invalid spawn id %v", name, id)
 	}
 
-	err := cmd.Start()
-	if err != nil {
-		return glisp.SexpNull, err
-	}
+	go func() {
+		err := v.cmd.Start()
+		if err != nil {
+			log.Print("spawn start error: ", err)
+		}
+		v.cmd.Wait()
+		close(v.done)
+	}()
 
 	return args[0], nil
 }
@@ -259,13 +338,13 @@ func execSpawnGetEnv(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Se
 
 	id := int(args[0].(glisp.SexpInt))
 
-	cmd, ok := s_spawns[id]
+	v, ok := s_spawns[id]
 	if !ok {
 		return glisp.SexpNull, fmt.Errorf("%v, invalid spawn id %v", name, id)
 	}
 
-	envArr := make([]glisp.Sexp, len(cmd.Env))
-	for i, v := range cmd.Env {
+	envArr := make([]glisp.Sexp, len(v.cmd.Env))
+	for i, v := range v.cmd.Env {
 		envArr[i] = glisp.SexpStr(v)
 	}
 
@@ -294,7 +373,7 @@ func execSpawn(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, er
 
 	s_spawn_counter++
 	id := s_spawn_counter
-	s_spawns[id] = cmd
+	s_spawns[id] = sSpawn{ cmd, make(chan struct{}), false }
 
 	return glisp.SexpInt(id), nil
 }

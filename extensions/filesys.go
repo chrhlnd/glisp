@@ -457,7 +457,6 @@ func appendFile(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, e
 		pos += int64(n)
 	}
 
-
 	return glisp.SexpInt(pos), nil
 }
 

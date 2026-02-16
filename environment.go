@@ -10,11 +10,40 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 type PreHook func(*Glisp, string, []Sexp)
 type PostHook func(*Glisp, string, Sexp)
 type QueueRun func()
+
+type waiting struct {
+	list   map[int]func() bool
+	nextId int
+}
+
+func newWaiting() *waiting {
+	return &waiting{make(map[int]func() bool), 0}
+}
+
+func (w *waiting) Add(fn func() bool) {
+	w.list[w.nextId] = fn
+	w.nextId++
+}
+
+func (w *waiting) WaitOnce() bool {
+	if len(w.list) == 0 {
+		return false
+	}
+
+	for k, v := range w.list {
+		if !v() {
+			delete(w.list, k)
+		}
+	}
+
+	return len(w.list) > 0
+}
 
 type Glisp struct {
 	datastack   *Stack
@@ -35,6 +64,7 @@ type Glisp struct {
 	queued      []QueueRun
 	queuedDrain bool
 	queuedHas   *atomic.Bool
+	waiters     *waiting
 }
 
 const CallStackSize = 25
@@ -69,6 +99,7 @@ func NewGlisp() *Glisp {
 	env.mainfunc = MakeFunction("__main", 0, false, make([]Instruction, 0))
 	env.curfunc = env.mainfunc
 	env.pc = 0
+	env.waiters = newWaiting()
 	return env
 }
 
@@ -96,6 +127,7 @@ func (env *Glisp) Clone() *Glisp {
 	dupenv.mainfunc = MakeFunction("__main", 0, false, make([]Instruction, 0))
 	dupenv.curfunc = dupenv.mainfunc
 	dupenv.pc = 0
+	dupenv.waiters = env.waiters
 	return dupenv
 }
 
@@ -121,6 +153,7 @@ func (env *Glisp) Duplicate() *Glisp {
 	dupenv.mainfunc = MakeFunction("__main", 0, false, make([]Instruction, 0))
 	dupenv.curfunc = dupenv.mainfunc
 	dupenv.pc = 0
+	dupenv.waiters = env.waiters
 	return dupenv
 }
 
@@ -484,8 +517,8 @@ func (env *Glisp) SwapObject(sym SexpSymbol, to Sexp) error {
 }
 
 func (env *Glisp) QueueRun(fn QueueRun) {
-	env.queuedHas.Store(true)
 	env.queueLock.Lock()
+	env.queuedHas.Store(true)
 	env.queued = append(env.queued, fn)
 	env.queueLock.Unlock()
 }
@@ -517,6 +550,10 @@ func (env *Glisp) IsDone() bool {
 	return env.pc == -1 || env.ReachedEnd()
 }
 
+func (env *Glisp) DataStackEmpty() bool {
+	return env.datastack.IsEmpty()
+}
+
 func (env *Glisp) Finish() (Sexp, error) {
 	if env.datastack.IsEmpty() {
 		env.DumpEnvironment()
@@ -526,11 +563,16 @@ func (env *Glisp) Finish() (Sexp, error) {
 	return env.datastack.PopExpr()
 }
 
+func (env *Glisp) RegisterWaitFn(fn func() bool) {
+	env.waiters.Add(fn)
+}
+
 func (env *Glisp) Step() (Sexp, error) {
 	if !env.IsDone() {
 		instr := env.curfunc.fun[env.pc]
 		err := instr.Execute(env)
 		if err != nil {
+			// panic("here " + err.Error())
 			return nil, err
 		}
 	}
@@ -547,48 +589,19 @@ func (env *Glisp) CallQueued() error {
 		return nil
 	}
 
-	env.queuedHas.Store(false)
-	env.queuedDrain = true
 	env.queueLock.Lock()
+	env.queuedHas.Store(false)
 	run := make([]QueueRun, len(env.queued))
 	copy(run, env.queued)
 	env.queued = env.queued[:0]
 	env.queueLock.Unlock()
 
-	gen := NewGenerator(env)
-	if !env.ReachedEnd() {
-		gen.AddInstruction(PopInstr(0))
-	}
-
-	err := gen.GenerateBegin([]Sexp{SexpNull})
-	if err != nil {
-		env.queuedDrain = false
-		return err
-	}
-
-	curfunc := env.curfunc
-	curpc := env.pc
-
-	env.curfunc = MakeFunction("__queued", 0, false, gen.instructions)
-	env.pc = 0
-
-	env.datastack.PushExpr(SexpNull)
-
+	env.queuedDrain = true
 	for _, call := range run {
 		call()
 	}
-
-	_, err = env.Run()
 	env.queuedDrain = false
-
-	env.datastack.PopExpr()
-
-	env.pc = curpc
-	env.curfunc = curfunc
-
-	env.queuedDrain = false
-
-	return err
+	return nil
 }
 
 func (env *Glisp) Run() (Sexp, error) {
@@ -600,7 +613,13 @@ func (env *Glisp) Run() (Sexp, error) {
 		if err != nil {
 			return SexpNull, err
 		}
+	}
+
+	env.CallQueued()
+
+	for env.waiters.WaitOnce() {
 		env.CallQueued()
+		time.Sleep(time.Millisecond)
 	}
 
 	return exp, err
