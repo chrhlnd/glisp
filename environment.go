@@ -53,26 +53,27 @@ func (w *waiting) WaitOnce() (Sexp, bool) {
 }
 
 type Glisp struct {
-	datastack   *Stack
-	scopestack  *Stack
-	addrstack   *Stack
-	stackstack  *Stack
-	symtable    map[string]int
-	revsymtable map[int]string
-	builtins    map[int]SexpFunction
-	macros      map[int]SexpFunction
-	curfunc     SexpFunction
-	mainfunc    SexpFunction
-	pc          int
-	nextsymbol  int
-	before      []PreHook
-	after       []PostHook
-	queueLock   *sync.Mutex
-	queued      []QueueRun
-	queuedDrain bool
-	queuedHas   *atomic.Bool
-	waiters     *waiting
-	imports     map[string]struct{}
+	datastack    *Stack
+	scopestack   *Stack
+	addrstack    *Stack
+	stackstack   *Stack
+	symtable     map[string]int
+	revsymtable  map[int]string
+	builtins     map[int]SexpFunction
+	macros       map[int]SexpFunction
+	curfunc      SexpFunction
+	mainfunc     SexpFunction
+	pc           int
+	nextsymbol   int
+	before       []PreHook
+	after        []PostHook
+	queueLock    *sync.Mutex
+	queued       []QueueRun
+	queuedDrain  bool
+	queuedHas    *atomic.Bool
+	queuedSignal *WaitCond
+	waiters      *waiting
+	imports      map[string]struct{}
 }
 
 const CallStackSize = 25
@@ -97,6 +98,7 @@ func NewGlisp() *Glisp {
 	env.queueLock = &sync.Mutex{}
 	env.queued = make([]QueueRun, 0, 3)
 	env.queuedHas = &atomic.Bool{}
+	env.queuedSignal = NewWaitCond()
 
 	for key, function := range BuiltinFunctions {
 		sym := env.MakeSymbol(key)
@@ -130,6 +132,7 @@ func (env *Glisp) Clone() *Glisp {
 	dupenv.queueLock = env.queueLock
 	dupenv.queued = env.queued
 	dupenv.queuedHas = env.queuedHas
+	dupenv.queuedSignal = env.queuedSignal
 
 	dupenv.scopestack.Push(env.scopestack.elements[0])
 
@@ -157,6 +160,7 @@ func (env *Glisp) Duplicate() *Glisp {
 	dupenv.queueLock = env.queueLock
 	dupenv.queued = env.queued
 	dupenv.queuedHas = env.queuedHas
+	dupenv.queuedSignal = env.queuedSignal
 
 	dupenv.scopestack.Push(env.scopestack.elements[0])
 
@@ -532,6 +536,11 @@ func (env *Glisp) QueueRun(fn QueueRun) {
 	env.queuedHas.Store(true)
 	env.queued = append(env.queued, fn)
 	env.queueLock.Unlock()
+	env.queuedSignal.Signal()
+}
+
+func (env *Glisp) GetQueuedWaitCond() *WaitCond {
+	return env.queuedSignal
 }
 
 func (env *Glisp) Apply(fun SexpFunction, args []Sexp) (Sexp, error) {
@@ -612,6 +621,9 @@ func (env *Glisp) CallQueued() bool {
 		call()
 	}
 	env.queuedDrain = false
+
+	env.queuedSignal.Reset()
+
 	return true
 }
 
