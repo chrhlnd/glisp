@@ -17,19 +17,26 @@ type PreHook func(*Glisp, string, []Sexp)
 type PostHook func(*Glisp, string, Sexp)
 type QueueRun func()
 
+type twait struct {
+	tag string
+	fn func()(Sexp, bool)
+}
+
 type waiting struct {
-	list    map[int]func() (Sexp, bool)
-	nextId  int
+	list []twait
 	waitExp Sexp
 }
 
 func newWaiting() *waiting {
-	return &waiting{make(map[int]func() (Sexp, bool)), 0, SexpNull}
+	return &waiting{nil, SexpNull}
 }
 
-func (w *waiting) Add(fn func() (Sexp, bool)) {
-	w.list[w.nextId] = fn
-	w.nextId++
+func (w *waiting) Add(tag string, fn func() (Sexp, bool)) {
+	if len(w.list) > 0 {
+		panic("waitlist should only ever be 1")
+	}
+
+	w.list = append(w.list, twait{tag, fn})
 }
 
 func (w *waiting) Count() int {
@@ -37,19 +44,19 @@ func (w *waiting) Count() int {
 }
 
 func (w *waiting) WaitOnce() (Sexp, bool) {
-	if len(w.list) == 0 {
+	if w.Count() == 0 {
 		return w.waitExp, false
 	}
 
-	for k, v := range w.list {
-		exp, wait := v()
-		if !wait {
-			w.waitExp = exp
-			delete(w.list, k)
-		}
+	var more bool
+
+	w.waitExp, more = w.list[0].fn()
+
+	if !more {
+		w.list = w.list[:0]
 	}
 
-	return SexpNull, len(w.list) > 0
+	return w.waitExp, len(w.list) > 0
 }
 
 type Glisp struct {
@@ -583,17 +590,22 @@ func (env *Glisp) Finish() (Sexp, error) {
 	return env.datastack.PopExpr()
 }
 
-func (env *Glisp) RegisterWaitFn(fn func() (Sexp, bool)) {
-	env.waiters.Add(fn)
+func (env *Glisp) RegisterWaitFn(tag string, fn func() (Sexp, bool)) {
+	env.waiters.Add(tag, fn)
 }
 
 func (env *Glisp) Step() (Sexp, error) {
 	if !env.IsDone() {
 		instr := env.curfunc.fun[env.pc]
+
 		err := instr.Execute(env)
+
 		if err != nil {
-			// panic("here " + err.Error())
 			return nil, err
+		}
+
+		if exp := env.WaitWaiters(nil); exp != nil {
+			env.datastack.PushExpr(exp)
 		}
 	}
 
@@ -621,10 +633,23 @@ func (env *Glisp) CallQueued() bool {
 		call()
 	}
 	env.queuedDrain = false
-
 	env.queuedSignal.Reset()
-
 	return true
+}
+
+func (env *Glisp) WaitWaiters(exp Sexp) Sexp {
+	for env.waiters.Count() > 0 {
+		env.CallQueued()
+
+		exp1, waitMore := env.waiters.WaitOnce()
+		if !waitMore {
+			exp = exp1
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	return exp
 }
 
 func (env *Glisp) Run() (Sexp, error) {
@@ -638,26 +663,7 @@ func (env *Glisp) Run() (Sexp, error) {
 		}
 	}
 
-	for env.CallQueued() {
-		// do this till we're drained
-	}
-
-	for env.waiters.Count() > 0 {
-		for env.CallQueued() {
-			// do this till we're drained
-		}
-		//env.CallQueued()
-		exp1, waitMore := env.waiters.WaitOnce()
-		if !waitMore {
-			exp = exp1
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-
-	for env.CallQueued() {
-		// do this till we're drained
-	}
+	exp = env.WaitWaiters(exp)
 
 	return exp, err
 }

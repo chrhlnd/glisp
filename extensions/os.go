@@ -2,13 +2,14 @@ package glispext
 
 import (
 	"github.com/chrhlnd/glisp"
-//	"github.com/mitchellh/go-ps"
+	//"strings"
 	"os/exec"
 	"os"
 	"fmt"
 	"log"
 	"sync"
 	"bytes"
+	"sync/atomic"
 )
 
 func parseCmdArgs(arg glisp.Sexp) ([]string, error) {
@@ -59,7 +60,6 @@ var s_spawn_counter int = 0
 type sSpawn struct {
 	cmd *exec.Cmd
 	done chan struct{}
-	closed bool
 }
 
 var s_spawns map[int]sSpawn = make(map[int]sSpawn)
@@ -134,29 +134,24 @@ func execSpawnWait(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp
 	if !ok {
 		return glisp.SexpNull, fmt.Errorf("invalid spawnid %v", spawnId)
 	}
-	select {
-	case <-v.done:
-		v.closed = true
-	default:
-	}
 
-	if !v.closed {
-		env.RegisterWaitFn(func()(glisp.Sexp, bool) {
-			select {
-			case <-v.done:
-				v.closed = true
-				delete(s_spawns, spawnId)
-				return glisp.SexpInt(v.cmd.ProcessState.ExitCode()), false
-			default:
-			}
-			return glisp.SexpNull, true
-		})
-	}
-
-	if v.closed {
-		delete(s_spawns, spawnId)
-		return glisp.SexpInt(v.cmd.ProcessState.ExitCode()), nil
-	}
+	env.RegisterWaitFn("spawn-wait", func()(glisp.Sexp, bool) {
+		select {
+		case <-v.done:
+			delete(s_spawns, spawnId)
+			/*
+			log.Print("os-spawn-wait done exit code ",
+						v.cmd.ProcessState.ExitCode(),
+						" for ",
+						v.cmd.Path,
+						" args ",
+						strings.Join(v.cmd.Args, ","))
+						*/
+			return glisp.SexpInt(v.cmd.ProcessState.ExitCode()), false
+		default:
+		}
+		return glisp.SexpNull, true
+	})
 
 	return glisp.SexpNull, nil
 }
@@ -168,18 +163,12 @@ func execSpawnIsAlive(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.S
 
 	spawnId := int(args[0].(glisp.SexpInt))
 
-	v, ok := s_spawns[spawnId]
+	_, ok := s_spawns[spawnId]
 	if !ok {
-		return glisp.SexpBool(ok), nil
+		return glisp.SexpBool(false), nil
 	}
 
-	select {
-	case <-v.done:
-		v.closed = true
-	default:
-	}
-
-	return glisp.SexpBool(!v.closed), nil
+	return glisp.SexpBool(true), nil
 }
 
 var s_watchers *ReadWatcherCollection = NewReadWatcherCollection()
@@ -190,13 +179,15 @@ type BufferRunner struct {
 	lock *sync.Mutex
 	deliver func(int, []byte)
 	runner func()
+	closed atomic.Bool
 }
 
 func newBufRunner(deliver func(int, []byte)) *BufferRunner {
 	return &BufferRunner{&bytes.Buffer{},
 		&sync.Mutex{},
 		deliver,
-		nil}
+		nil,
+		atomic.Bool{}}
 }
 
 func (b *BufferRunner) AddData(env *glisp.Glisp, id int, data []byte) {
@@ -210,7 +201,13 @@ func (b *BufferRunner) AddData(env *glisp.Glisp, id int, data []byte) {
 			b.buf.Reset()
 			b.runner = nil
 			b.lock.Unlock()
-			b.deliver(id, batch)
+			// log.Print("Deliverying batch size ", len(batch))
+			if !b.closed.Load() {
+				b.deliver(id, batch)
+			}
+			if len(batch) == 0 {
+				b.closed.Store(true)
+			}
 		}
 		env.QueueRun(b.runner)
 	}
@@ -238,6 +235,8 @@ func execSpawnOnStdOut(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 	watcherId := spawnId * 2
 
 	runner := newBufRunner(func (id int, batch []byte) {
+		// log.Print("OnStdOut running being called with batch size ", len(batch))
+		// log.Print(" for ", v.cmd.Path, " ", strings.Join(v.cmd.Args, ","))
 		res, err := env.Apply(fn, []glisp.Sexp{glisp.SexpData(batch)})
 		if err != nil {
 			log.Fatal(err)
@@ -277,6 +276,8 @@ func execSpawnOnStdErr(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 	watcherId := spawnId * 2 + 1
 
 	runner := newBufRunner(func (id int, batch []byte) {
+		//log.Print("OnStdError running being called with batch size ", len(batch))
+		//log.Print(" for ", v.cmd.Path, " ", strings.Join(v.cmd.Args, ","))
 		res, err := env.Apply(fn, []glisp.Sexp{glisp.SexpData(batch)})
 		if err != nil {
 			log.Fatal(err)
@@ -312,6 +313,7 @@ func execSpawnStart(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sex
 			log.Print("spawn start error: ", err)
 		}
 		v.cmd.Wait()
+		// log.Print("Closing done for spawn ", v.cmd.Path, " ", strings.Join(v.cmd.Args, ","))
 		close(v.done)
 	}()
 
@@ -360,7 +362,7 @@ func execSpawn(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, er
 
 	s_spawn_counter++
 	id := s_spawn_counter
-	s_spawns[id] = sSpawn{ cmd, make(chan struct{}), false }
+	s_spawns[id] = sSpawn{ cmd, make(chan struct{}) }
 
 	return glisp.SexpInt(id), nil
 }
