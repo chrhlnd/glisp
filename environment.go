@@ -604,7 +604,7 @@ func (env *Glisp) Step() (Sexp, error) {
 			return nil, err
 		}
 
-		if exp := env.WaitWaiters(nil); exp != nil {
+		if exp, waited := env.WaitWaiters(nil); waited {
 			env.datastack.PushExpr(exp)
 		}
 	}
@@ -637,19 +637,23 @@ func (env *Glisp) CallQueued() bool {
 	return true
 }
 
-func (env *Glisp) WaitWaiters(exp Sexp) Sexp {
+func (env *Glisp) WaitWaiters(exp Sexp) (Sexp,bool) {
+	hadwaiters := false
+
 	for env.waiters.Count() > 0 {
 		env.CallQueued()
-
 		exp1, waitMore := env.waiters.WaitOnce()
 		if !waitMore {
 			exp = exp1
+			hadwaiters = true
 			break
 		}
+
+		// wip setup a global signal and trip it it when needed
 		time.Sleep(time.Millisecond)
 	}
 
-	return exp
+	return exp, hadwaiters
 }
 
 func (env *Glisp) Run() (Sexp, error) {
@@ -662,8 +666,6 @@ func (env *Glisp) Run() (Sexp, error) {
 			return SexpNull, err
 		}
 	}
-
-	exp = env.WaitWaiters(exp)
 
 	return exp, err
 }
