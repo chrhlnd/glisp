@@ -2,7 +2,7 @@ package glispext
 
 import (
 	"github.com/chrhlnd/glisp"
-	//"strings"
+	"strings"
 	"os/exec"
 	"os"
 	"fmt"
@@ -135,25 +135,20 @@ func execSpawnWait(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp
 		return glisp.SexpNull, fmt.Errorf("invalid spawnid %v", spawnId)
 	}
 
-	env.RegisterWaitFn("spawn-wait", func()(glisp.Sexp, bool) {
-		select {
-		case <-v.done:
-			delete(s_spawns, spawnId)
-			/*
-			log.Print("os-spawn-wait done exit code ",
-						v.cmd.ProcessState.ExitCode(),
-						" for ",
-						v.cmd.Path,
-						" args ",
-						strings.Join(v.cmd.Args, ","))
-						*/
-			return glisp.SexpInt(v.cmd.ProcessState.ExitCode()), false
-		default:
-		}
-		return glisp.SexpNull, true
-	})
+	waitfor := make(chan struct{})
 
-	return glisp.SexpNull, nil
+	var ret glisp.Sexp
+
+	go func() {
+		<-v.done
+		delete(s_spawns, spawnId)
+		ret = glisp.SexpInt(v.cmd.ProcessState.ExitCode())
+		close(waitfor)
+	}()
+
+	<-waitfor
+
+	return ret, nil
 }
 
 func execSpawnIsAlive(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
@@ -180,36 +175,42 @@ type BufferRunner struct {
 	deliver func(int, []byte)
 	runner func()
 	closed atomic.Bool
+	tag string
 }
 
-func newBufRunner(deliver func(int, []byte)) *BufferRunner {
+func newBufRunner(tag string, deliver func(int, []byte)) *BufferRunner {
 	return &BufferRunner{&bytes.Buffer{},
 		&sync.Mutex{},
 		deliver,
 		nil,
-		atomic.Bool{}}
+		atomic.Bool{},
+		tag}
 }
 
 func (b *BufferRunner) AddData(env *glisp.Glisp, id int, data []byte) {
 	b.lock.Lock()
+	//log.Print("Collecting data size ", len(data), " ", b.tag)
 	b.buf.Write(data)
 	if b.runner == nil {
 		b.runner = func() {
+			//log.Print("Ran runner ", b.tag)
 			b.lock.Lock()
 			batch := make([]byte, b.buf.Len())
 			copy(batch, b.buf.Bytes())
 			b.buf.Reset()
 			b.runner = nil
 			b.lock.Unlock()
-			// log.Print("Deliverying batch size ", len(batch))
 			if !b.closed.Load() {
+				//log.Print("Deliverying batch size ", len(batch), " ", b.tag)
 				b.deliver(id, batch)
 			}
 			if len(batch) == 0 {
+				//log.Print("Closing runner ", b.tag)
 				b.closed.Store(true)
 			}
 		}
 		env.QueueRun(b.runner)
+		//log.Print("Queued runner for ", b.tag)
 	}
 	b.lock.Unlock()
 }
@@ -234,7 +235,9 @@ func execSpawnOnStdOut(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 
 	watcherId := spawnId * 2
 
-	runner := newBufRunner(func (id int, batch []byte) {
+	tag := "stdout: " + v.cmd.Path + " " + strings.Join(v.cmd.Args, ",")
+
+	runner := newBufRunner(tag, func (id int, batch []byte) {
 		// log.Print("OnStdOut running being called with batch size ", len(batch))
 		// log.Print(" for ", v.cmd.Path, " ", strings.Join(v.cmd.Args, ","))
 		res, err := env.Apply(fn, []glisp.Sexp{glisp.SexpData(batch)})
@@ -275,7 +278,9 @@ func execSpawnOnStdErr(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 
 	watcherId := spawnId * 2 + 1
 
-	runner := newBufRunner(func (id int, batch []byte) {
+	tag := "stderr " + v.cmd.Path + " " + strings.Join(v.cmd.Args, ",")
+
+	runner := newBufRunner(tag, func (id int, batch []byte) {
 		//log.Print("OnStdError running being called with batch size ", len(batch))
 		//log.Print(" for ", v.cmd.Path, " ", strings.Join(v.cmd.Args, ","))
 		res, err := env.Apply(fn, []glisp.Sexp{glisp.SexpData(batch)})
@@ -313,7 +318,6 @@ func execSpawnStart(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sex
 			log.Print("spawn start error: ", err)
 		}
 		v.cmd.Wait()
-		// log.Print("Closing done for spawn ", v.cmd.Path, " ", strings.Join(v.cmd.Args, ","))
 		close(v.done)
 	}()
 

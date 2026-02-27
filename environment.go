@@ -10,54 +10,11 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
-	"time"
 )
 
 type PreHook func(*Glisp, string, []Sexp)
 type PostHook func(*Glisp, string, Sexp)
 type QueueRun func()
-
-type twait struct {
-	tag string
-	fn func()(Sexp, bool)
-}
-
-type waiting struct {
-	list []twait
-	waitExp Sexp
-}
-
-func newWaiting() *waiting {
-	return &waiting{nil, SexpNull}
-}
-
-func (w *waiting) Add(tag string, fn func() (Sexp, bool)) {
-	if len(w.list) > 0 {
-		panic("waitlist should only ever be 1")
-	}
-
-	w.list = append(w.list, twait{tag, fn})
-}
-
-func (w *waiting) Count() int {
-	return len(w.list)
-}
-
-func (w *waiting) WaitOnce() (Sexp, bool) {
-	if w.Count() == 0 {
-		return w.waitExp, false
-	}
-
-	var more bool
-
-	w.waitExp, more = w.list[0].fn()
-
-	if !more {
-		w.list = w.list[:0]
-	}
-
-	return w.waitExp, len(w.list) > 0
-}
 
 type Glisp struct {
 	datastack    *Stack
@@ -79,7 +36,6 @@ type Glisp struct {
 	queuedDrain  bool
 	queuedHas    *atomic.Bool
 	queuedSignal *WaitCond
-	waiters      *waiting
 	imports      map[string]struct{}
 }
 
@@ -116,7 +72,6 @@ func NewGlisp() *Glisp {
 	env.mainfunc = MakeFunction("__main", 0, false, make([]Instruction, 0))
 	env.curfunc = env.mainfunc
 	env.pc = 0
-	env.waiters = newWaiting()
 	env.imports = make(map[string]struct{})
 	return env
 }
@@ -146,7 +101,6 @@ func (env *Glisp) Clone() *Glisp {
 	dupenv.mainfunc = MakeFunction("__main", 0, false, make([]Instruction, 0))
 	dupenv.curfunc = dupenv.mainfunc
 	dupenv.pc = 0
-	dupenv.waiters = env.waiters
 	dupenv.imports = env.imports
 	return dupenv
 }
@@ -174,7 +128,6 @@ func (env *Glisp) Duplicate() *Glisp {
 	dupenv.mainfunc = MakeFunction("__main", 0, false, make([]Instruction, 0))
 	dupenv.curfunc = dupenv.mainfunc
 	dupenv.pc = 0
-	dupenv.waiters = env.waiters
 	dupenv.imports = env.imports
 	return dupenv
 }
@@ -590,10 +543,6 @@ func (env *Glisp) Finish() (Sexp, error) {
 	return env.datastack.PopExpr()
 }
 
-func (env *Glisp) RegisterWaitFn(tag string, fn func() (Sexp, bool)) {
-	env.waiters.Add(tag, fn)
-}
-
 func (env *Glisp) Step() (Sexp, error) {
 	if !env.IsDone() {
 		instr := env.curfunc.fun[env.pc]
@@ -602,10 +551,6 @@ func (env *Glisp) Step() (Sexp, error) {
 
 		if err != nil {
 			return nil, err
-		}
-
-		if exp, waited := env.WaitWaiters(nil); waited {
-			env.datastack.PushExpr(exp)
 		}
 	}
 
@@ -635,25 +580,6 @@ func (env *Glisp) CallQueued() bool {
 	env.queuedDrain = false
 	env.queuedSignal.Reset()
 	return true
-}
-
-func (env *Glisp) WaitWaiters(exp Sexp) (Sexp,bool) {
-	hadwaiters := false
-
-	for env.waiters.Count() > 0 {
-		env.CallQueued()
-		exp1, waitMore := env.waiters.WaitOnce()
-		if !waitMore {
-			exp = exp1
-			hadwaiters = true
-			break
-		}
-
-		// wip setup a global signal and trip it it when needed
-		time.Sleep(time.Millisecond)
-	}
-
-	return exp, hadwaiters
 }
 
 func (env *Glisp) Run() (Sexp, error) {
