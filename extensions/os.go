@@ -148,11 +148,14 @@ func execSpawnWait(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp
 		if v.watcherOut != nil {
 			//log.Print("Waiting for out")
 			WAIT:
-			for {
+			for v.watcherOut != nil {
 				select {
 				case <-v.watcherOut:
 					break WAIT;
 				default:
+					if env.QueuedDraining() {
+						panic("watchout Can't do this from a draining context")
+					}
 					env.CallQueued()
 				}
 			}
@@ -161,11 +164,14 @@ func execSpawnWait(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp
 		if v.watcherErr != nil {
 			//log.Print("Waiting for err")
 			WAIT1:
-			for {
+			for v.watcherErr != nil {
 				select {
 				case <-v.watcherErr:
 					break WAIT1;
 				default:
+					if env.QueuedDraining() {
+						panic("watcherr Can't do this from a draining context")
+					}
 					env.CallQueued()
 				}
 			}
@@ -275,14 +281,22 @@ func execSpawnOnStdOut(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 	runner := newBufRunner(tag, func (id int, batch []byte) {
 		//log.Print("OnStdOut running being called with batch size ", len(batch))
 		//log.Print(" for ", v.cmd.Path, " ", strings.Join(v.cmd.Args, ","))
+		if len(batch) == 0 && v.watcherOut != nil {
+			close(v.watcherOut)
+			v.watcherOut = nil
+		}
+
 		res, err := env.Apply(fn, []glisp.Sexp{glisp.SexpData(batch)})
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		if val, ok := res.(glisp.SexpBool); (ok && bool(val)) || len(batch) == 0 {
+			if v.watcherOut != nil {
+				close(v.watcherOut)
+				v.watcherOut = nil
+			}
 			s_watchers.RemWatcher(watcherId, id)
-			close(v.watcherOut)
 		}
 	})
 
@@ -323,14 +337,23 @@ func execSpawnOnStdErr(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 	runner := newBufRunner(tag, func (id int, batch []byte) {
 		//log.Print("OnStdError running being called with batch size ", len(batch))
 		//log.Print(" for ", v.cmd.Path, " ", strings.Join(v.cmd.Args, ","))
+
+		if len(batch) == 0 && v.watcherErr != nil {
+			close(v.watcherErr)
+			v.watcherErr = nil
+		}
+
 		res, err := env.Apply(fn, []glisp.Sexp{glisp.SexpData(batch)})
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		if val, ok := res.(glisp.SexpBool); (ok && bool(val)) || len(batch) == 0 {
+			if v.watcherErr != nil {
+				close(v.watcherErr)
+				v.watcherErr = nil
+			}
 			s_watchers.RemWatcher(watcherId, id)
-			close(v.watcherErr)
 		}
 	})
 

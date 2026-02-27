@@ -561,6 +561,10 @@ func (env *Glisp) Step() (Sexp, error) {
 	return nil, nil
 }
 
+func (env *Glisp) QueuedDraining() bool {
+	return env.queuedDrain
+}
+
 func (env *Glisp) CallQueued() bool {
 	if env.queuedDrain || !env.queuedHas.Load() {
 		return false
