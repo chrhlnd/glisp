@@ -86,7 +86,14 @@ func SpawnKillAll() []error {
 
 	for _, v := range s_spawns {
 		if v.cmd.Process != nil {
-			err := v.cmd.Process.Kill()
+			var err error
+			select {
+			case <-v.done:
+				// don't kill if we're already done
+			default:
+				err = v.cmd.Process.Kill()
+			}
+
 			if err != nil {
 				errs = append(errs, err)
 			}
@@ -191,7 +198,10 @@ func execSpawnIsAlive(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.S
 	}
 
 	var spawnId int
-	if id, ok := args[0].(glisp.SexpInt); !ok {
+	var id glisp.SexpInt
+	var ok bool
+
+	if id, ok = args[0].(glisp.SexpInt); !ok {
 		return glisp.SexpBool(false), nil
 	}
 

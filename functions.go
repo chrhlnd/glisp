@@ -1052,19 +1052,33 @@ func WaitFunction(env *Glisp, name string, args []Sexp) (Sexp, error) {
 
 	var ret Sexp
 
-WAIT:
-	for {
-		env.CallQueued()
-
-		select {
-		case val := <-ch:
-			ret = val
-			delete(events, event)
-			break WAIT
-		default:
+	if delayMs == 0 {
+	W1:
+		for {
+			select {
+			case <-env.GetQueuedWaitCond().Channel():
+				env.CallQueued()
+			case val := <-ch:
+				ret = val
+				delete(events, event)
+				break W1
+			}
 		}
+	} else {
+	W2:
+		for {
+			env.CallQueued()
 
-		time.Sleep(time.Duration(delayMs) * time.Millisecond)
+			select {
+			case val := <-ch:
+				ret = val
+				delete(events, event)
+				break W2
+			default:
+			}
+
+			time.Sleep(time.Duration(delayMs) * time.Millisecond)
+		}
 	}
 
 	return ret, nil
