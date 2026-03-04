@@ -191,9 +191,11 @@ func execSpawnIsAlive(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.S
 	}
 
 	var spawnId int
-	if id, ok := args[0].(glisp.SexpInt); ok {
-		spawnId = int(id)
+	if id, ok := args[0].(glisp.SexpInt); !ok {
+		return glisp.SexpBool(false), nil
 	}
+
+	spawnId = int(id)
 
 	v, ok := s_spawns[spawnId]
 	if !ok {
