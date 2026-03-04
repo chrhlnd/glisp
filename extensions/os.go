@@ -190,14 +190,25 @@ func execSpawnIsAlive(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.S
 		return glisp.SexpNull, glisp.WrongNargs
 	}
 
-	spawnId := int(args[0].(glisp.SexpInt))
+	var spawnId int
+	if id, ok := args[0].(glisp.SexpInt); ok {
+		spawnId = int(id)
+	}
 
-	_, ok := s_spawns[spawnId]
+	v, ok := s_spawns[spawnId]
 	if !ok {
 		return glisp.SexpBool(false), nil
 	}
 
-	return glisp.SexpBool(true), nil
+	alive := true
+
+	select {
+	case <-v.done:
+		alive = false
+	default:
+	}
+
+	return glisp.SexpBool(alive), nil
 }
 
 var s_watchers *ReadWatcherCollection = NewReadWatcherCollection()
