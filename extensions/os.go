@@ -64,6 +64,33 @@ type sSpawn struct {
 	watcherErr chan struct{}
 }
 
+func (s* sSpawn)closeWatchers() {
+	if s.watcherOut != nil {
+		w := s.watcherOut
+		s.watcherOut = nil
+		if w != nil {
+			close(w)
+		}
+	}
+
+	if s.watcherErr != nil {
+		w := s.watcherErr
+		s.watcherErr = nil
+		if w != nil {
+			close(w)
+		}
+	}
+}
+
+func (s* sSpawn)waitWatchers() {
+	if s.watcherOut != nil {
+		<-s.watcherOut
+	}
+	if s.watcherErr != nil {
+		<-s.watcherErr
+	}
+}
+
 var s_spawns map[int]*sSpawn = make(map[int]*sSpawn)
 
 func SpawnWaitAll() []error {
@@ -152,37 +179,8 @@ func execSpawnWait(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp
 		<-v.done
 		delete(s_spawns, spawnId)
 		ret = glisp.SexpInt(v.cmd.ProcessState.ExitCode())
-		if v.watcherOut != nil {
-			//log.Print("Waiting for out")
-			WAIT:
-			for v.watcherOut != nil {
-				select {
-				case <-v.watcherOut:
-					break WAIT;
-				default:
-					if env.QueuedDraining() {
-						panic("watchout Can't do this from a draining context")
-					}
-					env.CallQueued()
-				}
-			}
-			//log.Print("Done waiting for out")
-		}
-		if v.watcherErr != nil {
-			//log.Print("Waiting for err")
-			WAIT1:
-			for v.watcherErr != nil {
-				select {
-				case <-v.watcherErr:
-					break WAIT1;
-				default:
-					if env.QueuedDraining() {
-						panic("watcherr Can't do this from a draining context")
-					}
-					env.CallQueued()
-				}
-			}
-			//log.Print("Done waiting for err")
+		if v, ok := s_spawns[spawnId]; ok {
+			v.waitWatchers()
 		}
 		close(waitfor)
 	}()
@@ -295,18 +293,17 @@ func execSpawnOnStdOut(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 
 	watcherId := spawnId * 2
 
-	if v.watcherOut == nil {
-		v.watcherOut = make(chan struct{})
-	}
-
 	tag := "stdout: " + v.cmd.Path + " " + strings.Join(v.cmd.Args, ",")
 
 	runner := newBufRunner(tag, func (id int, batch []byte) {
-		//log.Print("OnStdOut running being called with batch size ", len(batch))
-		//log.Print(" for ", v.cmd.Path, " ", strings.Join(v.cmd.Args, ","))
-		if len(batch) == 0 && v.watcherOut != nil {
-			close(v.watcherOut)
-			v.watcherOut = nil
+		v := s_spawns[spawnId]
+
+		if len(batch) == 0 {
+			v.closeWatchers()
+			// in this case close them here, due to possibly the Apply calling wait
+		    // which if we didn't close then we'd lock the vm
+		    // wait will be called in the apply for the async case, because a ui will be
+		    // the main driver of calls.. wait is the only way to get the return value
 		}
 
 		res, err := env.Apply(fn, []glisp.Sexp{glisp.SexpData(batch)})
@@ -315,11 +312,8 @@ func execSpawnOnStdOut(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 		}
 
 		if val, ok := res.(glisp.SexpBool); (ok && bool(val)) || len(batch) == 0 {
-			if v.watcherOut != nil {
-				close(v.watcherOut)
-				v.watcherOut = nil
-			}
 			s_watchers.RemWatcher(watcherId, id)
+			v.closeWatchers()
 		}
 	})
 
@@ -351,19 +345,17 @@ func execSpawnOnStdErr(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 
 	watcherId := spawnId * 2 + 1
 
-	if v.watcherErr == nil {
-		v.watcherErr = make(chan struct{})
-	}
-
 	tag := "stderr " + v.cmd.Path + " " + strings.Join(v.cmd.Args, ",")
 
 	runner := newBufRunner(tag, func (id int, batch []byte) {
-		//log.Print("OnStdError running being called with batch size ", len(batch))
-		//log.Print(" for ", v.cmd.Path, " ", strings.Join(v.cmd.Args, ","))
+		v := s_spawns[spawnId]
 
-		if len(batch) == 0 && v.watcherErr != nil {
-			close(v.watcherErr)
-			v.watcherErr = nil
+		if len(batch) == 0 {
+			v.closeWatchers()
+			// in this case close them here, due to possibly the Apply calling wait
+		    // which if we didn't close then we'd lock the vm
+		    // wait will be called in the apply for the async case, because a ui will be
+		    // the main driver of calls.. wait is the only way to get the return value
 		}
 
 		res, err := env.Apply(fn, []glisp.Sexp{glisp.SexpData(batch)})
@@ -372,11 +364,8 @@ func execSpawnOnStdErr(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 		}
 
 		if val, ok := res.(glisp.SexpBool); (ok && bool(val)) || len(batch) == 0 {
-			if v.watcherErr != nil {
-				close(v.watcherErr)
-				v.watcherErr = nil
-			}
 			s_watchers.RemWatcher(watcherId, id)
+			v.closeWatchers()
 		}
 	})
 
@@ -453,7 +442,8 @@ func execSpawn(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, er
 
 	s_spawn_counter++
 	id := s_spawn_counter
-	s_spawns[id] = &sSpawn{ cmd, make(chan struct{}), nil, nil }
+
+	s_spawns[id] = &sSpawn{ cmd, make(chan struct{}), make(chan struct{}), make(chan struct{}) }
 
 	return glisp.SexpInt(id), nil
 }
