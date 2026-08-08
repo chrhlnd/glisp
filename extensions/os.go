@@ -60,11 +60,14 @@ var s_spawn_counter int = 0
 type sSpawn struct {
 	cmd *exec.Cmd
 	done chan struct{}
+
+	wMux *sync.Mutex
 	watcherOut chan struct{}
 	watcherErr chan struct{}
 }
 
 func (s* sSpawn)closeWatchers() {
+	s.wMux.Lock()
 	if s.watcherOut != nil {
 		w := s.watcherOut
 		s.watcherOut = nil
@@ -80,6 +83,7 @@ func (s* sSpawn)closeWatchers() {
 			close(w)
 		}
 	}
+	s.wMux.Unlock()
 }
 
 func (s* sSpawn)waitWatchers() {
@@ -179,9 +183,6 @@ func execSpawnWait(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp
 		<-v.done
 		delete(s_spawns, spawnId)
 		ret = glisp.SexpInt(v.cmd.ProcessState.ExitCode())
-		if v, ok := s_spawns[spawnId]; ok {
-			v.waitWatchers()
-		}
 		close(waitfor)
 	}()
 
@@ -296,9 +297,9 @@ func execSpawnOnStdOut(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 	tag := "stdout: " + v.cmd.Path + " " + strings.Join(v.cmd.Args, ",")
 
 	runner := newBufRunner(tag, func (id int, batch []byte) {
-		v := s_spawns[spawnId]
+		v, ok := s_spawns[spawnId]
 
-		if len(batch) == 0 {
+		if ok && len(batch) == 0 {
 			v.closeWatchers()
 			// in this case close them here, due to possibly the Apply calling wait
 		    // which if we didn't close then we'd lock the vm
@@ -313,7 +314,9 @@ func execSpawnOnStdOut(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 
 		if val, ok := res.(glisp.SexpBool); (ok && bool(val)) || len(batch) == 0 {
 			s_watchers.RemWatcher(watcherId, id)
-			v.closeWatchers()
+			if ok && v != nil {
+				v.closeWatchers()
+			}
 		}
 	})
 
@@ -348,9 +351,9 @@ func execSpawnOnStdErr(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 	tag := "stderr " + v.cmd.Path + " " + strings.Join(v.cmd.Args, ",")
 
 	runner := newBufRunner(tag, func (id int, batch []byte) {
-		v := s_spawns[spawnId]
+		v, ok := s_spawns[spawnId]
 
-		if len(batch) == 0 {
+		if ok && len(batch) == 0 {
 			v.closeWatchers()
 			// in this case close them here, due to possibly the Apply calling wait
 		    // which if we didn't close then we'd lock the vm
@@ -365,7 +368,9 @@ func execSpawnOnStdErr(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.
 
 		if val, ok := res.(glisp.SexpBool); (ok && bool(val)) || len(batch) == 0 {
 			s_watchers.RemWatcher(watcherId, id)
-			v.closeWatchers()
+			if ok && v != nil {
+				v.closeWatchers()
+			}
 		}
 	})
 
@@ -443,7 +448,7 @@ func execSpawn(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, er
 	s_spawn_counter++
 	id := s_spawn_counter
 
-	s_spawns[id] = &sSpawn{ cmd, make(chan struct{}), make(chan struct{}), make(chan struct{}) }
+	s_spawns[id] = &sSpawn{ cmd, make(chan struct{}), &sync.Mutex{}, make(chan struct{}), make(chan struct{}) }
 
 	return glisp.SexpInt(id), nil
 }

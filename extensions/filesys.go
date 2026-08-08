@@ -444,7 +444,7 @@ func appendFile(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, e
 	for i, arg := range args[1:] {
 		data, ok := arg.(glisp.SexpData)
 		if !ok {
-			return glisp.SexpNull, fmt.Errorf("expected `data` got %T; for arg %v (data)", data, i+1)
+			return glisp.SexpNull, fmt.Errorf("expected `glisp.SexpData` got %T; for arg %v (data)", arg, i+1)
 		}
 
 		n, err := f.Write(data)
@@ -679,6 +679,24 @@ func pathRel(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, erro
 	return glisp.SexpStr(ret), nil
 }
 
+func pathCreate(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
+	target := ""
+	for _, v := range args {
+		s, ok := v.(glisp.SexpStr)
+		if !ok {
+			return glisp.SexpNull, fmt.Errorf("Expected strings for parameters")
+		}
+		target = filepath.Join(target, string(s))
+	}
+
+	err := os.MkdirAll(target, 0755)
+	if err != nil {
+		return glisp.SexpBool(false), nil
+	}
+
+	return glisp.SexpBool(true), nil
+}
+
 func createTempFile(env *glisp.Glisp, name string, args []glisp.Sexp) (glisp.Sexp, error) {
 	if len(args) != 2 {
 		return glisp.SexpNull, glisp.WrongNargs
@@ -734,6 +752,7 @@ func ImportFileSys(env *glisp.Glisp) {
 	env.AddFunction("fs-path-dir", pathDir)
 	env.AddFunction("fs-path-no-ext", pathNoExt)
 	env.AddFunction("fs-path-rel", pathRel)
+	env.AddFunction("fs-path-create", pathCreate)
 	env.AddFunction("fs-file-exists", fileExists)
 	env.AddFunction("fs-file-info", fileInfo)
 	env.AddFunction("fs-read-file", readFile)
